@@ -1,3 +1,5 @@
+### Functions for determination of topological charge ###
+
 function topological_charge(configs)
     N_s,N_t,dir,N_prod = size(configs)
     Q = complex(zeros(N_prod))
