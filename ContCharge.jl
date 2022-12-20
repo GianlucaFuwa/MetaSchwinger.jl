@@ -1,3 +1,5 @@
+### Functions for determination of continuous charge and its difference for changes in 1 link-value ###
+
 function cont_charge(links)
     N_s,N_t,dir = size(links)
     charge = 0 
@@ -27,10 +29,10 @@ function dcont_charge(links,n,dir,dx)
     N_s,N_t,d = size(links)
     ns = n[1]
     nt = n[2]
-    NT = nt%N_t +1  # nₜ+1 mit periodische Randbed.
-    NS = ns%N_s +1  # nₛ+1 mit periodische Randbed.
-    TN = (nt + N_t -2)%N_t +1   # nₜ-1 mit periodische Randbed.
-    SN = (ns + N_s -2)%N_s +1   # nₛ-1 mit periodische Randbed.
+    NT = nt%N_t +1  
+    NS = ns%N_s +1  
+    TN = (nt + N_t -2)%N_t +1   
+    SN = (ns + N_s -2)%N_s +1  
 
     if dir == 1
         a = links[ns,nt,1]+dx + links[NS,nt,2] - links[ns,NT,1] - links[ns,nt,2]
