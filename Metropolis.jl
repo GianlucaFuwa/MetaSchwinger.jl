@@ -1,3 +1,5 @@
+### Metropolis-Algorithm involving Metadynamics ###
+
 function sweep_meta!(links,beta,epsilon,bias_potential,Q_max,dq,w)   #Metropolis-Sweep Funktion
     N_s,N_t,d = size(links)
     Q = cont_charge(links)
@@ -33,6 +35,8 @@ function metropolis_meta(start,N_s,N_t,beta,epsilon,Q_max,dq,w,N_therm,N_sweeps,
     end
     return configs
 end;
+
+### Metropolis-Algorithm without Metadynamics ###
 
 function sweep!(links,beta,epsilon)   #Metropolis-Sweep Funktion
     N_s,N_t,d = size(links)
