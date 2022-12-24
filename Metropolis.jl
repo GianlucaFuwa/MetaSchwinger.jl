@@ -16,7 +16,7 @@ function sweep_meta!(links::Array{Float64,3},bias::Array{Float64,1})   #Metropol
                     links[s,t,dir] += dU
                     Q = Q_prop
                     global acc += 1
-                    #update_bias!(bias,Q)
+                    update_bias!(bias,Q)
                 end
             end
         end
