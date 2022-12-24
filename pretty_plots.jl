@@ -1,0 +1,22 @@
+function pretty_plots(q_vals,bias_potential,Q_cont_meta,Q_top_meta)
+    bias_plot = plot(q_vals, bias_potential, title="Bias-Potential | \$\\beta\$ = $β | $N_s x $N_t", label="\$V(Q_{cont})\$", linewidth=1)
+    bias_plot = xlabel!("\$Q_{cont}\$")
+    bias_plot = ylabel!("\$V(Q_{cont})\$")
+    bias_plot = plot!(legend=:topleft)
+    savefig(bias_plot,"bias_pot.pdf")
+
+    cont_plot = plot(1:Int(N_sweeps/n_skip),Q_cont_meta, title="\$Q_{cont}\$ | \$\\beta\$ = $β | $N_s x $N_t", label="\$Q_{cont}\$ + Meta", linewidth=1)
+    #plot!(cont_plot,1:N_sweeps,Q_cont,label=L"$Q_{cont}$", linewidth=1)
+    cont_plot = xlabel!("Simulation time")
+    cont_plot = ylabel!("\$Q_{cont}\$")
+    cont_plot = plot!(legend=:topleft)
+    savefig(cont_plot,"q_cont.pdf")
+
+    top_plot = plot(1:Int(N_sweeps/n_skip),Q_top_meta, title="\$Q_{top}\$ | \$\\beta\$ = $β  | $N_s x $N_t", label="\$Q_{top}\$ + Meta", linewidth=1)
+    #plot!(top_plot,1:N_sweeps,Q_top,label=L"$Q_{top}$", linewidth=1)
+    top_plot = xlabel!("Simulation time")
+    top_plot = ylabel!("\$Q_{top}\$")
+    top_plot = plot!(legend=:topleft)
+    top_plot = hline!([χ_top],linestyle=:dash, label="\$<Q^2> = $χ_top\$")
+    savefig(top_plot,"q_top.pdf")
+end
