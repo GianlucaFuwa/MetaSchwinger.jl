@@ -1,30 +1,53 @@
 ### Metropolis-Algorithm involving Metadynamics ###
 
-function sweep_meta!(links::Array{Float64,3},bias::Array{Float64,1})   #Metropolis-Sweep Funktion
+function sweep_meta!(links::Array{Float64,3},bias::Array{Float64,1},is_static::Bool=false)   #Metropolis-Sweep Funktion
     Q = cont_charge(links)
-    for s = 1:N_s
-        for t = 1:N_t
-            for dir=1:d
+    for eo in [0,1]
+        for s = (eo+1):2:N_s
+            for t = 1:N_t
                 dU = (rand()-0.5)*2*ε
-                Q_prop = Q + dcont_charge(links,s,t,dir,dU)
                 old_ind = grid_ind(Q)
+                Q_prop = Q + dcont_charge(links,s,t,2,dU)
                 prop_ind = grid_ind(Q_prop)
-                ΔS = daction(links,s,t,dir,dU)  #Berechne Wirkungsunterschied
+                ΔS = daction(links,s,t,2,dU)  #Berechne Wirkungsunterschied
                 ΔV = bias[prop_ind]-bias[old_ind]
                 ΔV_pen = penalty_potential(Q_prop)-penalty_potential(Q)
                 if rand()<exp(-ΔS-ΔV-ΔV_pen)   #Annahme nach gegebener Wahrscheinlichkeit
-                    links[s,t,dir] += dU
+                    links[s,t,2] += dU
                     Q = Q_prop
                     global acc += 1
-                    update_bias!(bias,Q)
+                    if is_static == false
+                        update_bias!(bias,Q)
+                    end
                 end
             end
         end
     end
-    return links
+    for eo in [0,1]
+        for t = (eo+1):2:N_t
+            for s = 1:N_s
+                dU = (rand()-0.5)*2*ε
+                old_ind = grid_ind(Q)
+                Q_prop = Q + dcont_charge(links,s,t,1,dU)
+                prop_ind = grid_ind(Q_prop)
+                ΔS = daction(links,s,t,1,dU)  #Berechne Wirkungsunterschied
+                ΔV = bias[prop_ind]-bias[old_ind]
+                ΔV_pen = penalty_potential(Q_prop)-penalty_potential(Q)
+                if rand()<exp(-ΔS-ΔV-ΔV_pen)   #Annahme nach gegebener Wahrscheinlichkeit
+                    links[s,t,1] += dU
+                    Q = Q_prop
+                    global acc += 1
+                    if is_static == false
+                        update_bias!(bias,Q)
+                    end
+                end
+            end
+        end
+    end
+    return links,bias
 end;
 
-function metropolis_meta(start::Array{Float64,3},bias::Array{Float64,1})
+function metropolis_meta(start::Array{Float64,3},bias::Array{Float64,1},is_static::Bool=false)
     links = deepcopy(start)
     Q_top = zeros(Int64,Int(N_sweeps/n_skip),1)
     Q_cont = zeros(Float64,Int(N_sweeps/n_skip),1)
@@ -35,20 +58,20 @@ function metropolis_meta(start::Array{Float64,3},bias::Array{Float64,1})
     end
     i = 1
     for l = 1:N_sweeps  #Führe Simulation durch
-        links = sweep_meta!(links,bias)
+        links,bias = sweep_meta!(links,bias,is_static)
         if l%n_skip == 0
             Qc = cont_charge(links) 
             @inbounds Q_top[i] = top_charge(links)
             @inbounds Q_cont[i] = Qc
-            @inbounds Q_squared_weighted[i] = Qc^2*exp(-bias[grid_ind(Qc)]-penalty_potential(Qc)) 
-            denom += exp(-bias[grid_ind(Qc)]-penalty_potential(Qc))
+            @inbounds Q_squared_weighted[i] = Qc^2*exp(bias[grid_ind(Qc)]+penalty_potential(Qc)) 
+            denom += exp(bias[grid_ind(Qc)]+penalty_potential(Qc))
             i += 1 
         end
     end
     display(denom)
     Q_squared_weighted = Q_squared_weighted./denom
-    println("acc. rate = $(acc/(N_sweeps*N_s*N_t*d))")
-    return Q_top,Q_cont,Q_squared_weighted
+    println("acc. rate = $(100*acc/(N_sweeps*N_s*N_t*d))%")
+    return Q_top,Q_cont,Q_squared_weighted,bias
 end;
 
 ### Metropolis-Algorithm without Metadynamics ###
@@ -90,19 +113,4 @@ function metropolis(start::Array{Float64,3})
     end
     Q_squared_weighted = Q_squared_weighted./denom
     return Q_top,Q_cont,Q_squared_weighted
-end;
-
-function taueffint(obs::Array{Float64,1})
-    Gammat = autocor(obs, 1:length(obs)-1)
-    W = findfirst(x->x<=0, Gammat[:])
-    taueff = Array{Float64}(undef,W)
-    for l = 1:W
-        @inbounds taueff[l] = 1/log(abs(Gammat[l]/Gammat[l+1]))
-    end
-    tauint = 1/2
-    for l=1:W
-        @inbounds tauint += Gammat[l]
-    end
-    tauint = round(Int,tauint)
-    return tauint, taueff, W
 end;
