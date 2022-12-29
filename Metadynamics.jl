@@ -9,7 +9,7 @@ function update_bias!(bias_potential::Array{Float64,1},q::Float64)
     grid_index = grid_ind(q)
     grid_q = -Q_max+(grid_index-1)*dq
 
-    if abs(grid_q) < Q_max
+    if grid_index >= 1 && grid_index < length(bias_potential)
         bias_potential[grid_index] += w*(1-(q-grid_q)/dq)
         bias_potential[grid_index+1] += w*(q-grid_q)/dq
     else
