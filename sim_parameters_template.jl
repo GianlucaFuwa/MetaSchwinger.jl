@@ -1,10 +1,10 @@
 using Random
 
-physical["N"] = (32,32)
-physical["β"] = 12.8
+physical["N"] = (48,48)
+physical["β"] = 28.8
 
-meta["Qmax"] = (-9,9)
-meta["Qthr"] = (-8.5,8.5)
+meta["Qmax"] = (-6.5,6.5)
+meta["Qthr"] = (-5.8,5.8)
 meta["δq"] = 1e-3
 meta["w"] = 1e-4
 meta["k"] = 100
