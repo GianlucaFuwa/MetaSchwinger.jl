@@ -1,5 +1,5 @@
-include("latticeGT.jl")
-using .LatticeGT
+include("MetaSchwinger.jl")
+using .MetaSchwinger
 using Random
 using Printf
 using DelimitedFiles
