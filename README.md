@@ -1,2 +1,2 @@
 # LGT-Metadynamics
-Application of Metadynamics in Simulations of Lattice Gauge Theories
+Variations of Metadynamics in Simulations of the Schwinger Model (1+1D QED)
