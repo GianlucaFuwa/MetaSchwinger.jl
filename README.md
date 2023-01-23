@@ -2,7 +2,7 @@
 Variations of Metadynamics in Simulations of the Schwinger Model (1+1D QED)
 
 ## Quick Start
-1. Choose parameters of your choice to either build a Metapotential first (use: template_build.jl to see structure) and do:
+1. Choose parameters of your choice to build a Metapotential first (use: template_build.jl to see structure) and do:
 ```
 julia "build.jl" "build_parameters.jl"
 ```
