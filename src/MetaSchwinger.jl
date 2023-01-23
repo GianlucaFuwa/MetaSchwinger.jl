@@ -1,4 +1,4 @@
-module LatticeGT
+module MetaSchwinger
 
     include("./system/system_parameters.jl")
     include("./verbose.jl")
