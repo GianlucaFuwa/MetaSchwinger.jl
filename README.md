@@ -11,7 +11,8 @@ julia "build.jl" "build_parameters.jl"
 ```
 julia -t 2 "run.jl" "sim_parameters.jl"
 ```
-**! Make sure to use 2 or more threads when using Parallel Tempering!** \\
+**! Make sure to use 2 or more threads when using Parallel Tempering!** 
+
 **! Make sure to use the same Physics and Metapotential parameters for build- and measurement-run !**
 
 Measurements are outputted as .txt files in the chosen directories; you can use them to make plots as you wish.
