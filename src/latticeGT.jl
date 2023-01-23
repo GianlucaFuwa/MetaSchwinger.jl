@@ -1,13 +1,13 @@
 module LatticeGT
 
-    include("system_parameters.jl")
-    include("verbose.jl")
-    include("gaugefield.jl")
-    include("metadynamics.jl")
-    include("measurements.jl")
-    include("mc.jl")
-    include("mainrun.jl")
-    include("mainbuild.jl")
+    include("./system/system_parameters.jl")
+    include("./verbose.jl")
+    include("./gaugefield.jl")
+    include("./metadynamics.jl")
+    include("./measurements.jl")
+    include("./mc.jl")
+    include("./system/mainrun.jl")
+    include("./system/mainbuild.jl")
 
     import .System_parameters:Params,print_parameters,Params_set,make_parameters,parameterloading
     import .Gaugefields:Gaugefield,recalc_S!,recalc_Q!,instanton,dqar,daction,staple,plaquette
