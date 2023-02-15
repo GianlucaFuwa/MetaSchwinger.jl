@@ -40,10 +40,10 @@ module Metadynamics
 	end
 
 	function Base.flush(x::Bias_potential)
-        if x.fp !== nothing
-            flush(x.fp)
-        end
-    end
+		if x.fp !== nothing
+		    flush(x.fp)
+		end
+    	end
 
 	function Base.setindex!(x::Bias_potential,v,i::Int)
 		x.values[min(length(x.values),max(i,1))] = v
