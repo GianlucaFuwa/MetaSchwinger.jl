@@ -89,6 +89,7 @@ module Mainrun
         return nothing
     end
     
+    # SIMULATION INCLUDING METAD #
     function run_sim!(field::Gaugefield,bias::Bias_potential,params::Params)
         verbose = Verbose_(params.logfile)
         println_verbose(verbose,"# ",pwd())
@@ -122,7 +123,7 @@ module Mainrun
             bias_mean += bias.values
             seekstart(bias.fp)
             writedlm(bias.fp,[bias.q_vals bias_mean/trj])
-            flush(bias.fp)
+            flush(bias)
             measurements(trj,field,measset)
         end
         println_verbose(verbose,"Acceptance rate: $(100*numaccepts/params.Nsweeps/field.NV/2)%")
@@ -142,7 +143,8 @@ module Mainrun
         flush(verbose)
         return nothing
     end
-
+    
+    # SIMULATION INCLUDING METAD & PARALLEL TEMPERING #
     function run_temperedsim!(fields::Vector{Gaugefield},biases::Vector{Bias_potential},params::Params)
         Ninstances = params.Ninstances
         verbose = Verbose_(params.logfile)
@@ -201,7 +203,7 @@ module Mainrun
                 bias_means[i] += biases[i].values
                 seekstart(biases[i].fp)
                 writedlm(biases[i].fp,[biases[i].q_vals bias_means[i]/trj])
-                flush(biases[i].fp)
+                flush(biases[i])
             end
 
             if trj%params.swap_every == 0
