@@ -32,7 +32,7 @@ meas["meas_calls"] = Dict[Dict{Any,Any}("methodname" => "Meta_charge","measure_e
                           ]
                        
 system["veryverbose"] = false 
-system["randomseeds"] = [Random.Xoshiro(1206), Random.Xoshiro()]
+system["randomseeds"] = [Random.Xoshiro(), Random.Xoshiro()]
 
 system["logdir"] = "./logs/N$(physical["N"])/beta$(physical["β"])/Proceedings"
 system["logfile"] = "CVlims$(meta["CVlims"])_dcv$(meta["bin_width"])_w$(meta["w"])_meas_PT.txt"
