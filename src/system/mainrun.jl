@@ -9,7 +9,7 @@ module Mainrun
     import ..Gaugefields: Gaugefield,recalc_Sg!,recalc_CV!
     import ..Metadynamics: Bias_potential, update_bias!, write_to_file!
     import ..Measurements: Measurement_set,measurements,calc_weights
-    import ..Local: sweep!,sweep_meta!
+    import ..Local: sweep!,sweep_meta!,adjusted_ϵ
     import ..Tempering: tempering_swap!
 
     import ..System_parameters:physical,meta,param_meta,sim,mc,meas,system
@@ -58,6 +58,9 @@ module Mainrun
 
         measset = Measurement_set(params.measure_dir,meas_calls = params.meas_calls)
         ϵ = params.ϵ_metro
+        multi_hit = params.multi_hit
+        metro_target_acc = params.metro_target_acc
+        metro_norm = 1 / (field.NV * 2 * multi_hit)
         rng = params.randomseeds[1]
 
         if params.initial == "hot"
@@ -67,21 +70,24 @@ module Mainrun
         end 
 
         for therm = 1:params.Ntherm
-            sweep!(field,rng,ϵ)
+            tmp = sweep!(field, rng, ϵ, multi_hit)
+            ϵ = adjusted_ϵ(ϵ, tmp, metro_norm, metro_target_acc)
         end
         
         numaccepts = 0
 
         for itrj = 1:params.Nsweeps
-            tmp = sweep!(field,rng,ϵ)
+            tmp = sweep!(field, rng, ϵ, multi_hit)
+            ϵ = adjusted_ϵ(ϵ, tmp, metro_norm, metro_target_acc)
             numaccepts += tmp
             # writing logs....#
             if params.veryverbose
-            println_verbose(verbose," ",itrj," ",100*numaccepts/itrj/field.NV/2,"%"," # itrj accrate")
+            println_verbose(verbose," ",itrj," ",100*numaccepts/itrj/field.NV/2/multi_hit,"%"," # itrj accrate")
             end
             #-----------------#
             measurements(itrj,field,measset)
         end
+        println_verbose(verbose, "Final ϵ_metro: ", ϵ)
         println_verbose(verbose,"Acceptance rate: ",100*numaccepts/params.Nsweeps/field.NV/2,"%")
 
         flush(stdout)
@@ -99,6 +105,9 @@ module Mainrun
 
         measset = Measurement_set(params.measure_dir, meas_calls = params.meas_calls)
         ϵ = params.ϵ_metro
+        multi_hit = params.multi_hit
+        metro_target_acc = params.metro_target_acc
+        metro_norm = 1 / (field.NV * 2 * multi_hit)
         rng = params.randomseeds[1]
 
         if params.initial == "hot"
@@ -108,13 +117,15 @@ module Mainrun
         end 
 
         for itrj = 1:params.Ntherm
-            sweep!(field, rng, ϵ)
+            tmp = sweep!(field, rng, ϵ, multi_hit)
+            ϵ = adjusted_ϵ(ϵ, tmp, metro_norm, metro_target_acc)
         end
         
         numaccepts = 0
         bias_mean = deepcopy(bias.values)
         for itrj = 1:params.Nsweeps
-            tmp = sweep_meta!(field, bias, rng, ϵ)
+            tmp = sweep_meta!(field, bias, rng, ϵ, multi_hit)
+            ϵ = adjusted_ϵ(ϵ, tmp, metro_norm, metro_target_acc)
             numaccepts += tmp
             update_bias!(bias, field.CV, itrj=itrj)
             # writing logs....#
@@ -125,7 +136,8 @@ module Mainrun
             bias_mean += bias.values
             measurements(itrj, field, measset)
         end
-        println_verbose(verbose, "Acceptance rate: ", 100*numaccepts/params.Nsweeps/field.NV/2, "%")
+        println_verbose(verbose, "Final ϵ_metro: ", ϵ)
+        println_verbose(verbose, "Acceptance rate: ", 100*numaccepts/params.Nsweeps/field.NV/2/multi_hit, "%")
         println_verbose(verbose, "Exceeded Count: ", bias.exceeded_count)
 
         copyto!(bias.values, bias_mean/params.Nsweeps)
@@ -162,6 +174,9 @@ module Mainrun
         end
 
         ϵ = params.ϵ_metro
+        multi_hit = params.multi_hit
+        metro_target_acc = params.metro_target_acc
+        metro_norm = 1 / (fields[1].NV * 2 * multi_hit)
         rng = params.randomseeds
 
         if params.initial == "hot"
@@ -174,7 +189,8 @@ module Mainrun
 
         for itrj = 1:params.Ntherm
             @threads for i=1:Ninstances
-            sweep!(fields[i], rng[i], ϵ)
+            tmp = sweep!(fields[i], rng[i], ϵ, metro_norm, metro_target_acc, multi_hit)
+            ϵ = adjusted_ϵ(ϵ, tmp, metro_norm, metro_target_acc)
             end
         end
 
@@ -188,7 +204,8 @@ module Mainrun
 
         for itrj = 1:params.Nsweeps
             @threads for i = 1:Ninstances
-                tmp[i] = sweep_meta!(fields[i], biases[i], rng[i], ϵ)
+                tmp[i] = sweep_meta!(fields[i], biases[i], rng[i], ϵ, metro_norm, metro_target_acc, multi_hit)
+                ϵ = adjusted_ϵ(ϵ, tmp[i], metro_norm, metro_target_acc)
                 numaccepts[i] += tmp[i]
                 bias_means[i] += biases[i].values
                 update_bias!(biases[i], fields[i].CV)
@@ -215,9 +232,9 @@ module Mainrun
             measurements(itrj, fields[i], meassets[i])
             end
         end # END SWEEPS
-
+        println_verbose(verbose, "Final ϵ_metro: ", ϵ)
         for i = 1:Ninstances
-            println_verbose(verbose, "Acceptance rate ", i, ": ", 100*numaccepts[i]/params.Nsweeps/fields[i].NV/2, "%")
+            println_verbose(verbose, "Acceptance rate ", i, ": ", 100*numaccepts[i]/params.Nsweeps/fields[i].NV/2/mutli_hit, "%")
             if i < Ninstances
                 println_verbose(verbose, "Swap Acceptance rate ", i, " ⇔ ", i+1, ": ", 100*num_swaps[i]/(params.Nsweeps÷params.swap_every), "%")
             end

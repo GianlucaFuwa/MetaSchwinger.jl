@@ -8,7 +8,7 @@ module Mainbuild
     import ..Gaugefields: Gaugefield,recalc_Sg!,recalc_CV!
     import ..Metadynamics: Bias_potential,update_bias!,write_to_file!,parametric_to_bias!
     import ..Measurements: Measurement_set,measurements,calc_weights
-    import ..Local: sweep!,sweep_meta!
+    import ..Local: sweep!,sweep_meta!,adjusted_ϵ
     import ..Tempering: tempering_swap!
 
     import ..System_parameters:physical,meta,param_meta,sim,mc,meas,system
@@ -41,6 +41,9 @@ module Mainbuild
 
         measset = Measurement_set(params.measure_dir,meas_calls = params.meas_calls)
         ϵ = params.ϵ_metro
+        multi_hit = params.multi_hit
+        metro_target_acc = params.metro_target_acc
+        metro_norm = 1 / (field.NV * 2 * multi_hit)
         rng = params.randomseeds[1]
         Nsweeps = params.Nsweeps
 
@@ -51,7 +54,8 @@ module Mainbuild
         end 
 
         for therm = 1:params.Ntherm
-            sweep!(field,rng,ϵ)
+            tmp = sweep!(field, rng, ϵ, multi_hit)
+            ϵ = adjusted_ϵ(ϵ, tmp, metro_norm, metro_target_acc)
         end
         #
         if bias.parametric == true
@@ -60,7 +64,8 @@ module Mainbuild
         #
         numaccepts = 0
         for itrj = 1:Nsweeps
-            tmp = sweep_meta!(field,bias,rng,ϵ)
+            tmp = sweep_meta!(field, bias, rng, ϵ, multi_hit)
+            ϵ = adjusted_ϵ(ϵ, tmp, metro_norm, metro_target_acc)
             numaccepts += tmp
             update_bias!(bias, field.CV, itrj=itrj)
             # writing logs....#
@@ -70,8 +75,9 @@ module Mainbuild
             #-----------------#
             measurements(itrj,field,measset)
         end
-        println_verbose(verbose,"Acceptance rate: ",100*numaccepts/Nsweeps/field.NV/2,"%")
-        println_verbose(verbose,"Exceeded Count: ",bias.exceeded_count)
+        println_verbose(verbose, "Final ϵ_metro: ", ϵ)
+        println_verbose(verbose, "Acceptance rate: ", 100*numaccepts*metro_norm/Nsweeps, "%")
+        println_verbose(verbose, "Exceeded Count: ", bias.exceeded_count)
 
         write_to_file!(bias)
         flush(bias)
