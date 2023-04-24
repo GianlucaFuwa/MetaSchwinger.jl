@@ -11,7 +11,7 @@ module System_parameters
 
 	printlist_sim = ["Ntherm","Nsweeps","initial","tempering_enabled","Ninstances","swap_every"]
 
-    printlist_mc = ["update_method","ϵ_metro","ϵ_hmc","hmc_steps"]
+    printlist_mc = ["update_method","ϵ_metro","multi_hit","metro_target_acc","ϵ_hmc","hmc_steps"]
 
     printlist_meas = ["meas_calls"]
 
@@ -108,6 +108,8 @@ module System_parameters
 
         update_method::String
 		ϵ_metro::Union{Float64,Nothing}
+        multi_hit::Union{Float64,Nothing}
+        metro_target_acc::Union{Float64,Nothing}
 
         meas_calls::Array{Dict,1}
 
@@ -205,6 +207,8 @@ module System_parameters
             update_method = mc["update_method"]
             if update_method == "Local" || update_method == "Local-Meta"
 			    ϵ_metro = mc["ϵ_metro"]
+                multi_hit = mc["multi_hit"]
+                metro_target_acc = mc["metro_target_acc"]
             else
                 error("Only local update method supported")
             end
@@ -237,7 +241,7 @@ module System_parameters
                 meta_enabled, parametric, symmetric, CVlims, bin_width, w, k, is_static, well_tempered, ΔT,
                 potential_parameters, lower_bounds, upper_bounds, batchsize, testfun, minimizer,
                 Ntherm, Nsweeps, initial, tempering_enabled, Ninstances, swap_every,
-                update_method, ϵ_metro,
+                update_method, ϵ_metro, multi_hit, metro_target_acc,
                 meas_calls,
                 veryverbose, randomseeds, logdir, logfile, loadfile, measure_dir, savebias_dir, biasfiles, usebiases, weightfiles)
 		end
