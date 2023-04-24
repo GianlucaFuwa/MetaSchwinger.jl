@@ -27,7 +27,10 @@ sim["initial"] = "cold"
 sim["parallel_tempering"] = nothing
 sim["swap_every"] = nothing
 
-mc["ϵ_metro"] = 1.25
+mc["ϵ_metro"] = 0.2
+mc["multi_hit"] = 1
+mc["metro_target_acc"] = 0.7
+
 meas["meas_calls"] = Dict[Dict{Any,Any}("methodname" => "Meta_charge", "measure_every" => 10),
                           Dict{Any,Any}("methodname" => "Topological_charge", "measure_every" => 10),
                           Dict{Any,Any}("methodname" => "Action", "measure_every" => 10)]
