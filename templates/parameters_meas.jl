@@ -22,7 +22,9 @@ sim["tempering_enabled"] = true
     sim["Ninstances"] = 2
     sim["swap_every"] = 1
 
-mc["ϵ_metro"] = 0.20
+mc["ϵ_metro"] = 0.2
+mc["multi_hit"] = 1
+mc["metro_target_acc"] = 0.7
 
 meas["meas_calls"] = Dict[Dict{Any,Any}("methodname" => "Meta_charge","measure_every" => 10),
                           Dict{Any,Any}("methodname" => "Topological_charge","measure_every" => 10),
