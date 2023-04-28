@@ -162,11 +162,11 @@ module System_parameters
                         push!(usebiases,nothing)
                     end
                     for i=1:Ninstances-1
-                        push!(biasfiles, pwd()*savebias_dir*"/"*system["biasfile"]*"_$i.txt")
+                        push!(biasfiles, pwd()*"/"*savebias_dir*"/"*system["biasfile"]*"_$i.txt")
                         push!(weightfiles, pwd()*"/"*measure_dir*"/Weights_$i.txt")
                     end
                 else # IF NO TEMPERING
-                    push!(biasfiles, pwd()*savebias_dir*"/"*system["biasfile"]*".txt")
+                    push!(biasfiles, pwd()*"/"*savebias_dir*"/"*system["biasfile"]*".txt")
                     push!(weightfiles, pwd()*"/"*measure_dir*"/Weights.txt")
                     if haskey(system, "usebiases")
                         push!(usebiases, system["usebiases"][1])

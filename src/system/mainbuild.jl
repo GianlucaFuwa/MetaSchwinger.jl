@@ -1,22 +1,21 @@
 module Mainbuild
+    using Dates
     using DelimitedFiles
     using InteractiveUtils
-    using Dates
     
-    import ..System_parameters: Params,Params_set,parameterloading
-    import ..Verbose_print: Verbose_,println_verbose,print2file
-    import ..Gaugefields: Gaugefield,recalc_Sg!,recalc_CV!
-    import ..Metadynamics: Bias_potential,update_bias!,write_to_file!,parametric_to_bias!
-    import ..Measurements: Measurement_set,measurements,calc_weights
-    import ..Local: sweep!,sweep_meta!,adjusted_ϵ
+    import ..Gaugefields: Gaugefield, recalc_Sg!, recalc_CV!
+    import ..Local: adjusted_ϵ, sweep!, sweep_meta!
+    import ..Metadynamics: Bias_potential, parametric_to_bias!, update_bias!, write_to_file!
+    import ..Measurements: calc_weights, Measurement_set, measurements
+    import ..System_parameters: parameterloading, Params, Params_set
+    import ..System_parameters: physical, meta, param_meta, sim, mc, meas, system
     import ..Tempering: tempering_swap!
-
-    import ..System_parameters:physical,meta,param_meta,sim,mc,meas,system
+    import ..Verbose_print: print2file, println_verbose, Verbose_
 
     function run_build(filenamein::String)
         filename = filenamein
         include(abspath(filename))
-        params_set = Params_set(physical,meta,param_meta,sim,mc,meas,system)
+        params_set = Params_set(physical, meta, param_meta, sim, mc, meas, system)
 
         run_build(params_set)
 
@@ -33,13 +32,13 @@ module Mainbuild
         return nothing
     end
 
-    function run_build!(field::Gaugefield,bias::Bias_potential,params::Params)
+    function run_build!(field::Gaugefield, bias::Bias_potential, params::Params)
         verbose = Verbose_(params.logfile)
-        println_verbose(verbose,"# ",pwd())
-        println_verbose(verbose,"# ",Dates.now())
+        println_verbose(verbose, "# ", pwd())
+        println_verbose(verbose, "# ", Dates.now())
         versioninfo(verbose)
 
-        measset = Measurement_set(params.measure_dir,meas_calls = params.meas_calls)
+        measset = Measurement_set(params.measure_dir, meas_calls = params.meas_calls)
         ϵ = params.ϵ_metro
         multi_hit = params.multi_hit
         metro_target_acc = params.metro_target_acc
@@ -48,12 +47,12 @@ module Mainbuild
         Nsweeps = params.Nsweeps
 
         if params.initial == "hot"
-            field.U = rand(size(field.U) .- 0.5)*2*2pi
+            field.U = rand(size(field.U) .- 0.5) * 2 * 2π
             recalc_Sg!(field)
             recalc_CV!(field)
         end 
 
-        for therm = 1:params.Ntherm
+        for therm in 1:params.Ntherm
             tmp = sweep!(field, rng, ϵ, multi_hit)
             ϵ = adjusted_ϵ(ϵ, tmp, metro_norm, metro_target_acc)
         end
@@ -63,20 +62,33 @@ module Mainbuild
         end
         #
         numaccepts = 0
-        for itrj = 1:Nsweeps
+        for itrj in 1:Nsweeps
             tmp = sweep_meta!(field, bias, rng, ϵ, multi_hit)
             ϵ = adjusted_ϵ(ϵ, tmp, metro_norm, metro_target_acc)
             numaccepts += tmp
-            update_bias!(bias, field.CV, itrj=itrj)
+            update_bias!(bias, field.CV, itrj = itrj)
             # writing logs....#
             if params.veryverbose
-            println_verbose(verbose," ",itrj," ",100*numaccepts/trj/field.NV/2,"%"," # trj accrate")
+            println_verbose(
+                verbose,
+                " ",
+                itrj,
+                " ",
+                100 * numaccepts / trj / field.NV / 2,
+                "%",
+                " # trj accrate"
+            )
             end
             #-----------------#
-            measurements(itrj,field,measset)
+            measurements(itrj, field, measset)
         end
         println_verbose(verbose, "Final ϵ_metro: ", ϵ)
-        println_verbose(verbose, "Acceptance rate: ", 100*numaccepts*metro_norm/Nsweeps, "%")
+        println_verbose(
+            verbose,
+            "Acceptance rate: ",
+            100 * numaccepts * metro_norm / Nsweeps,
+            "%"
+        )
         println_verbose(verbose, "Exceeded Count: ", bias.exceeded_count)
 
         write_to_file!(bias)

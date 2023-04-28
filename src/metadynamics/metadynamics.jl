@@ -1,9 +1,14 @@
 module Metadynamics
 	using DelimitedFiles
-	using Optimization, ForwardDiff, Zygote, OptimizationOptimJL, StatsBase
+	using ForwardDiff
+	using StatsBase
+	using Optimization 
+	using OptimizationOptimJL
+	using Zygote
+
+	import ..Gaugefields: Gaugefield
 	import ..System_parameters: Params
 	import ..Verbose_print: Verbose, Verbose_, println_verbose
-	import ..Gaugefields: Gaugefield
 	
 	struct Bias_potential{O}
 		is_static::Bool
@@ -45,7 +50,8 @@ module Metadynamics
 			k = p.k
 
 			parametric = p.parametric
-			if parametric==true && is_static==false
+
+			if parametric == true && is_static == false
 				current_parameters = p.potential_parameters
 				lower_bounds = p.lower_bounds
 				upper_bounds = p.upper_bounds
@@ -88,12 +94,12 @@ module Metadynamics
 		end	
 	end
 
-	function potential_from_file(p::Params,usebias::Union{Nothing,String})
+	function potential_from_file(p::Params, usebias::Union{Nothing,String})
 		if usebias === nothing
-			return zeros(round(Int,(p.CVlims[2]-p.CVlims[1])/p.bin_width,RoundNearestTiesAway)+1)
+			return zeros(round(Int, (p.CVlims[2] - p.CVlims[1]) / p.bin_width, RoundNearestTiesAway) + 1)
 		else
-			values = readdlm(usebias, Float64, comments=true)
-			len = round(Int,(p.CVlims[2]-p.CVlims[1])/p.bin_width,RoundNearestTiesAway)+1
+			values = readdlm(usebias, Float64, comments = true)
+			len = round(Int, (p.CVlims[2] - p.CVlims[1]) / p.bin_width, RoundNearestTiesAway) + 1
 			@assert length(values[:,2]) == len  "Potential length should be $len but is $(length(values[:,2]))"
 			return values[:,2]
 		end
@@ -101,7 +107,7 @@ module Metadynamics
 
 	function write_to_file!(b::Bias_potential)
 		for (idx, cv) in enumerate(b.cv_vals)
-			value = ReturnPotential(b,cv)
+			value = ReturnPotential(b, cv)
 			println(b.fp, "$cv $value # Metapotential")
 		end
 		return nothing
@@ -119,18 +125,18 @@ module Metadynamics
         end
     end
 
-	function Base.setindex!(b::Bias_potential,v,i::Int)
+	function Base.setindex!(b::Bias_potential, v, i)
 		b.values[min(length(b.values), max(i, 1))] = v
 		return nothing
 	end
 
-	@inline function Base.getindex(b::Bias_potential,i::Int)
+	@inline function Base.getindex(b::Bias_potential,i)
 		return b.values[min(length(b.values), max(i, 1))]
 	end
 
-	@inline function index(b::Bias_potential,cv::Float64)
+	@inline function index(b::Bias_potential, cv)
 		grid_index = (cv - b.CVlims[1]) / b.bin_width + 0.5
-		return round(Int,grid_index,RoundNearestTiesAway)
+		return round(Int, grid_index, RoundNearestTiesAway)
 	end
 
 	function Base.sum(b::Bias_potential)
@@ -151,7 +157,7 @@ module Metadynamics
 	get_biasstorage(b::Bias_potential) = b.bias_storage
 	get_fullbiasstorage(b::Bias_potential) = b.fullbias_storage
 
-	function update_bias!(b::Bias_potential, cv::Float64; itrj=nothing)
+	function update_bias!(b::Bias_potential, cv; itrj = nothing)
 		if is_static(b)
 			return nothing
 		elseif is_parametric(b) == false
@@ -164,50 +170,55 @@ module Metadynamics
 		end
 	end 
 
-	function update_bias_regular!(b::Bias_potential, cv::Float64)
+	function update_bias_regular!(b::Bias_potential, cv)
 		grid_index = index(b, cv)
+
 		if 1 <= grid_index < length(b.values)
 			for (idx, current_bin) in enumerate(b.cv_vals)
 				well_tempered_fac = is_well_tempered(b) ? exp(-b[idx] / b.ΔT) : 1
 				b[idx] += well_tempered_fac*b.w*exp(-0.5(cv-current_bin)^2 / b.bin_width^2)
 			end	
 		end
+
 		return nothing
 	end
 
-	function update_bias_parametric!(b::Bias_potential, cv::Float64 ,itrj)
+	function update_bias_parametric!(b::Bias_potential, cv , itrj)
 		batchsize = get_batchsize(b)
 		idx = mod1(itrj, batchsize)
 		push!(b.cv_storage, cv)
 		push!(b.bias_storage, b(cv))
 		b.fullbias_storage[itrj] = b.values
 		update_bias_regular!(b, cv)
+
 		if is_symmetric(b)
 			update_bias_regular!(b, -cv)
 		end
+
 		if idx == batchsize
 			p = get_parameters(b)
 			lb, ub = get_bounds(b)
 			minimizer = get_minimizer(b)
 			f = OptimizationFunction(b.testfun, Optimization.AutoForwardDiff())
-			sol = solve(OptimizationProblem(f, p, b, lb=lb, ub=ub), minimizer, time_limit=60)
+			sol = solve(OptimizationProblem(f, p, b, lb=lb, ub=ub), minimizer, time_limit = 60)
 			b.current_parameters .= sol.u
 			test = b.testfun(p, b)
 			println_verbose(b.KS_fp, "$itrj $(sol.u[1]) $(sol.u[2]) $(sol.u[3]) $test # itrj parameters test")
 			println("========================================")
 			flush(b.KS_fp)
 		end
+
 		return nothing
 	end
 
-	function parametricFES(parameters, cv::Float64)
+	function parametricFES(parameters, cv)
 		A, B, C = parameters
-		return -A*cv^2 - B*cos(pi*cv*C)^2
+		return -A * cv^2 - B * cos(π * cv * C)^2
 	end
 
-	function parametricBias(parameters, cv::Float64)
+	function parametricBias(parameters, cv)
 		A, B, C = parameters
-		return A*cv^2 + B*cos(pi*cv*C)^2
+		return A * cv^2 + B * cos(π * cv * C)^2
 	end
 
 	function KStest(parameters, b::Bias_potential)
@@ -229,15 +240,17 @@ module Metadynamics
 		cvmin = sorteddata[1]
 		cvmax = sorteddata[end]
 
-		l = abs( 0.0 - (sorteddata[1] - cvmin) / (cvmax - cvmin) )
-		r = abs( cdf(sorteddata[1]) - (sorteddata[1] - cvmin) / (cvmax - cvmin) )
-		for i = 2:batchsize
+		l = abs(0.0 - (sorteddata[1] - cvmin) / (cvmax - cvmin))
+		r = abs(cdf(sorteddata[1]) - (sorteddata[1] - cvmin) / (cvmax - cvmin))
+
+		for i in 2:batchsize
 			P_i = (sorteddata[i] - cvmin) / (cvmax - cvmin)
 			lnext = abs(cdf(sorteddata[i-1]) - P_i)
 			rnext = abs(cdf(sorteddata[i]) - P_i)
 			l = l ≤ lnext ? lnext : l
 			r = r ≤ rnext ? rnext : r
 		end
+
 		return max(l, r)
 	end
 
@@ -262,16 +275,17 @@ module Metadynamics
 		cvmax = ceil(maximum(sorteddata))
 
 		S = 0.0
-		for i = 1:batchsize-1
+		
+		for i in 1:batchsize - 1
 			p_i = F(sorteddata[i])
         	u_i = wantedCDF(sorteddata[i], cvmin, cvmax)
         	u_ip1 = wantedCDF(sorteddata[i+1], cvmin, cvmax)
-			S += p_i^2 * log(u_ip1 / u_i) -
-            (p_i-1)^2 * log((1-u_ip1) / (1-u_i))
+			S += p_i^2 * log(u_ip1 / u_i) - (p_i-1)^2 * log((1-u_ip1) / (1-u_i))
 		end
+
 		u_1 = wantedCDF(sorteddata[1], cvmin, cvmax)
 		u_n = wantedCDF(sorteddata[end], cvmin, cvmax)
-		return batchsize * ( -1 - log(u_n) - log(1-u_1) + S )
+		return batchsize * (-1 - log(u_n) - log(1-u_1) + S)
 	end
 
 	function GADLTtest(parameters, b::Bias_potential)
@@ -294,20 +308,21 @@ module Metadynamics
 		cvmax = ceil(maximum(sorteddata))
 
 		S = 0.0
-		for i = 1:batchsize-1
+
+		for i in 1:batchsize - 1
 			p_i = F(sorteddata[i])
 			u_i = wantedCDF(sorteddata[i], cvmin, cvmax)
 			u_ip1 = wantedCDF(sorteddata[i+1], cvmin, cvmax)
 			S += p_i^2 * log(u_ip1/u_i) + 2p_i * (u_i - u_ip1)
 		end
+
 		p_n = F(sorteddata[end])
 		u_n = wantedCDF(sorteddata[end], cvmin, cvmax)
-		return batchsize * ( 0.5 - 2p_n*(1-u_n) - p_n^2*log(u_n) + S )
+		return batchsize * (0.5 - 2p_n * (1-u_n) - p_n^2 * log(u_n) + S)
 	end
 
 	function weight_for_cdf(parameters, cv, bias, fullbias, b::Bias_potential)
 		cv_vals = b.cv_vals
-
 		inorm = parametric_norm(parameters, fullbias, cv_vals)
 		weight = inorm * exp( parametricFES(parameters, cv) + bias )
 		return weight
@@ -316,12 +331,14 @@ module Metadynamics
 	function parametric_norm(parameters, old_bias, cv_vals)
 		normA = 0.0
 		i = 0
+
 		for cv in cv_vals
 			i += 1
-			normA += exp( -parametricFES(parameters, cv) -old_bias[i] )
+			normA += exp(-parametricFES(parameters, cv) - old_bias[i])
 			#normA += exp( -parametricFES(parameters, cv) -
 			#	parametricBias(old_bias, cv) )
 		end
+
 		return normA
 	end
 
@@ -331,9 +348,11 @@ module Metadynamics
 	
 	function parametric_to_bias!(b::Bias_potential)
 		parameters = get_parameters(b)
+
 		for (idx, cv) in enumerate(b.cv_vals)
 			b[idx] = parametricBias(parameters, cv)
 		end
+
 		return nothing
 	end
 
@@ -341,18 +360,19 @@ module Metadynamics
 		return ReturnPotential(b, cv)
 	end
 
-	function ReturnPotential(b::Bias_potential, cv::Float64)
+	function ReturnPotential(b::Bias_potential, cv)
 		cvmin, cvmax = get_CVlims(b)
+
 		if cvmin <= cv < cvmax
 			grid_index = index(b, cv)
 			return b[grid_index]
 		else
-			penalty = b.k * ( 0.1 + min( (cv-cvmin)^2, (cv-cvmax)^2 ) )
+			penalty = b.k * (0.1 + min((cv-cvmin)^2, (cv-cvmax)^2))
 			return penalty
 		end
 	end
 
-	function DeltaV(b::Bias_potential, cvold::Float64, cvnew::Float64)
+	function DeltaV(b::Bias_potential, cvold, cvnew)
 		dV = b(cvnew) - b(cvold)
 		return dV
 	end

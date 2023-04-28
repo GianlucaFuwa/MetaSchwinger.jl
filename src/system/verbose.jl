@@ -4,9 +4,9 @@ module Verbose_print
     abstract type Verbose end
 
     struct Verbose_ <: Verbose
-        fp::Union{Nothing,IOStream}
+        fp::Union{Nothing, IOStream}
         Verbose_() = new(nothing)
-        Verbose_(filename::String) = new(open(filename,"w"))
+        Verbose_(filename::String) = new(open(filename, "w"))
         Verbose_(fp::IOStream) = new(fp)
     end
 
@@ -18,21 +18,24 @@ module Verbose_print
 
     function InteractiveUtils.versioninfo(v::Verbose)
         InteractiveUtils.versioninfo()
+
         if v.fp !== nothing
             InteractiveUtils.versioninfo(v.fp)
         end
     end
 
-    function println_verbose(v::Verbose,val...) 
+    function println_verbose(v::Verbose, val...) 
         println(val...)
+
         if v.fp !== nothing
-            println(v.fp,val...)
+            println(v.fp, val...)
         end
     end
 
-    function print2file(v::Verbose,val...)
+    function print2file(v::Verbose, val...)
+
         if v.fp !== nothing
-            println(v.fp,val...)
+            println(v.fp, val...)
         end
     end
 end
