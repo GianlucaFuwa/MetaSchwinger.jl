@@ -7,12 +7,12 @@ Variations of Metadynamics in Simulations of the Schwinger Model (1+1D QED)
 - Parallel Tempering (Geyer, C. J. (1991). Markov chain Monte Carlo maximum likelihood. Computing Science and Statistics: Proc. 23rd Symp. Interface, 156–163.) incl. the possibility to add a different Metapotential to each of the instances
 
 ## Quick Start
-1. Choose parameters of your choice to build a Metapotential first (use: template_build.jl to see structure) and do:
+1. Choose parameters of your choice to build a Metapotential first (use: template/parameters_build.jl to see structure) and do:
 ```
 julia src/build.jl templates/build_parameters.jl
 ```
 
-2. Use built Metapotential to measure observables in second run (use: template_sym.jl to see structure) and do:
+2. Use built Metapotential to measure observables in second run (use: template/parameters_meas.jl to see structure) and do:
 ```
 julia -t 2 src/run.jl templates/sim_parameters.jl
 ```
