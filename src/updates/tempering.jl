@@ -1,31 +1,54 @@
 module Tempering
-    using Random
     
-    import ..Gaugefields: add_CV!, add_Sg!, Gaugefield, swap!
-    import ..Metadynamics: Bias_potential, DeltaV, update_bias!
+    import ..Gaugefields: Gaugefield
+    import ..Metadynamics: BiasPotential, update_bias!
 
-    function tempering_swap!(field0::Gaugefield, field1::Gaugefield, bias::Bias_potential, rng)
-		CV0 = field0.CV
+    function tempering_swap!(
+		field1::Gaugefield,
+		field2::Gaugefield,
+		bias1::BiasPotential,
+		bias2::BiasPotential,
+		rng,
+	)
 		CV1 = field1.CV
+		CV2 = field2.CV
 
-		ΔCV = CV0 - CV1
-		ΔSg = field0.Sg - field1.Sg
-		ΔV = DeltaV(bias, CV0, CV1)
-		accept_swap = rand(rng) ≤ exp(ΔV)
+		ΔCV = CV1 - CV2
+		ΔSg = field1.Sg - field2.Sg
+		ΔV1 = bias1(CV2) - bias1(CV1)
+		ΔV2 = bias2(CV1) - bias2(CV2)
+		accept_swap = rand(rng) ≤ exp(- ΔV1 - ΔV2)
 
 		if accept_swap
-			swap!(field0, field1)
-			add_CV!(field1, ΔCV)
-			add_CV!(field0, -ΔCV)
-			add_Sg!(field1, ΔSg)
-			add_Sg!(field0, -ΔSg)
+			swap!(field1, field2)
+			field2.CV += ΔCV
+			field1.CV -= ΔCV
+			field2.Sg += ΔSg
+			field1.Sg -= ΔSg
 			
-			if !bias.is_static
-				update_bias!(bias, field1.CV)
+			if !bias1.is_static
+				update_bias!(bias1, field1.CV)
+			end
+			if !bias2.is_static
+				update_bias!(bias2, field2.CV)
 			end
 		end
 
 		return accept_swap
 	end 
+
+	function swap!(a::Gaugefield, b::Gaugefield)
+		NX, NT, _ = size(a)
+
+		for μ in 1:2
+			for it in 1:NT
+				for ix in 1:NX
+					a[ix,it,μ], b[ix,it,μ] = b[ix,it,μ], a[ix,it,μ]
+				end
+			end
+		end
+
+		return nothing
+	end
 
 end

@@ -4,43 +4,45 @@ module Mainrun
     using DelimitedFiles
     using InteractiveUtils
 
+    import ..DiracOperatorModule: dirac_operator
     import ..Gaugefields: Gaugefield, recalc_Sg!, recalc_CV!
-    import ..Local: adjusted_ϵ, sweep!, sweep_meta!
-    import ..Metadynamics: Bias_potential, update_bias!, write_to_file!
-    import ..Measurements: calc_weights, Measurement_set, measurements
-    import ..System_parameters: Params, Params_set, parameterloading
-    import ..System_parameters: physical, meta, param_meta, sim, mc, meas, system
+    import ..MetroUpdate: adjusted_ϵ, sweep!, sweep_meta!
+    import ..InstantonUpdate: instanton_update!
+    import ..Metadynamics: BiasPotential, update_bias!, write_to_file!
+    import ..Measurements: calc_weights, MeasurementSet, measurements
+    import ..System_parameters: Params, ParamSet, parameterloading
+    import ..System_parameters: physical, meta, param_meta, sim, mc, dirac, meas, system
     import ..Tempering: tempering_swap!
     import ..Verbose_print: println_verbose, print2file, Verbose_
 
     function run_sim(filenamein::String)
         filename = filenamein
         include(abspath(filename))
-        params_set = Params_set(physical, meta, param_meta, sim, mc, meas, system)
+        params_set = ParamSet(physical, meta, param_meta, sim, mc, dirac, meas, system)
         run_sim(params_set)
         return nothing
     end
 
-    function run_sim(params_set::Params_set)
+    function run_sim(params_set::ParamSet)
         params = parameterloading(params_set)
 
         if params.meta_enabled
             if params.tempering_enabled
                 fields = Vector{Gaugefield}(undef, 0)
-                biases = Vector{Bias_potential}(undef, 0)
+                biases = Vector{BiasPotential}(undef, 0)
 
                 for i in 1:params.Ninstances
                     push!(fields, Gaugefield(params))
                 end
 
                 for i in 1:params.Ninstances
-                    push!(biases,Bias_potential(params, instance = i - 1))
+                    push!(biases, BiasPotential(params, instance = i - 1))
                 end
 
                 run_temperedsim!(fields, biases, params)
-            elseif ~params.tempering_enabled
+            elseif !params.tempering_enabled
                 field = Gaugefield(params)
-                bias = Bias_potential(params)
+                bias = BiasPotential(params)
                 run_sim!(field, bias, params)
             end
         else
@@ -57,7 +59,14 @@ module Mainrun
         println_verbose(verbose, "# ", Dates.now())
         versioninfo(verbose)
 
-        measset = Measurement_set(params.measure_dir, meas_calls = params.meas_calls)
+        DiracOperator = dirac_operator(params)
+
+        measset = MeasurementSet(
+            params.measure_dir,
+            meas_calls = params.meas_calls,
+            D = DiracOperator,
+        )
+
         ϵ = params.ϵ_metro
         multi_hit = params.multi_hit
         metro_target_acc = params.metro_target_acc
@@ -76,22 +85,30 @@ module Mainrun
         end
         
         numaccepts = 0
+        numaccepts_instanton = 0
 
         for itrj in 1:params.Nsweeps
             tmp = sweep!(field, rng, ϵ, multi_hit)
+
+            if params.instanton_enabled
+                Q = ifelse(rand(rng) < 0.5, 1, -1)
+                tmp_instanton = instanton_update!(field, Q, rng)
+                numaccepts_instanton += tmp_instanton
+            end
+
             ϵ = adjusted_ϵ(ϵ, tmp, metro_norm, metro_target_acc)
             numaccepts += tmp
 
             if params.veryverbose
-            println_verbose(
-                verbose,
-                " ",
-                itrj,
-                " ",
-                100 * numaccepts / itrj / field.NV / 2 / multi_hit,
-                "%",
-                " # itrj accrate"
-            )
+                println_verbose(
+                    verbose,
+                    " ",
+                    itrj,
+                    " ",
+                    100 * numaccepts / itrj / field.NV / 2 / multi_hit,
+                    "%",
+                    " # itrj accrate"
+                )
             end
 
             measurements(itrj, field, measset)
@@ -101,9 +118,18 @@ module Mainrun
         println_verbose(
             verbose,
             "Acceptance rate: ",
-            100 * numaccepts / params.Nsweeps / field.NV / 2,
+            100 * numaccepts / params.Nsweeps / field.NV / 2 / multi_hit,
             "%"
         )
+
+        if params.instanton_enabled 
+            println_verbose(
+                verbose,
+                "Instanton acceptance rate: ",
+                100 * numaccepts_instanton / params.Nsweeps / 2,
+                "%"
+            )
+        end
 
         flush(stdout)
         flush(verbose)
@@ -112,13 +138,20 @@ module Mainrun
 
     #=====================================================================================#
 
-    function run_sim!(field::Gaugefield, bias::Bias_potential, params::Params)
+    function run_sim!(field::Gaugefield, bias::BiasPotential, params::Params)
         verbose = Verbose_(params.logfile)
         println_verbose(verbose, "# ", pwd())
         println_verbose(verbose, "# ", Dates.now())
         versioninfo(verbose)
 
-        measset = Measurement_set(params.measure_dir, meas_calls = params.meas_calls)
+        DiracOperator = dirac_operator(params)
+
+        measset = MeasurementSet(
+            params.measure_dir,
+            meas_calls = params.meas_calls,
+            D = DiracOperator,
+        )
+
         ϵ = params.ϵ_metro
         multi_hit = params.multi_hit
         metro_target_acc = params.metro_target_acc
@@ -182,7 +215,7 @@ module Mainrun
         weights = calc_weights(q_vals[:,2], bias)
 
         open(params.weightfiles[1], "w") do io
-            writedlm(io, weights)
+            writedlm(io, [q_vals[:,1] weights])
         end
 
         effective_samplesize = round(Int, sum(weights)^2 / sum(weights.^2))
@@ -197,7 +230,7 @@ module Mainrun
     
     function run_temperedsim!(
         fields::Vector{Gaugefield},
-        biases::Vector{Bias_potential},
+        biases::Vector{BiasPotential},
         params::Params
     )
         Ninstances = params.Ninstances
@@ -212,12 +245,12 @@ module Mainrun
             " MetaD instances"
         )
 
-        meassets = Vector{Measurement_set}(undef, 0)
+        meassets = Vector{MeasurementSet}(undef, 0)
 
         for i in 1:Ninstances
             push!(
                 meassets,
-                Measurement_set(params.measure_dir, meas_calls = params.meas_calls,
+                MeasurementSet(params.measure_dir, meas_calls = params.meas_calls,
                 instance = "_$(i-1)")
             )
         end
@@ -246,7 +279,7 @@ module Mainrun
         end
 
         numaccepts = zeros(Int64, Ninstances)
-        num_swaps = zeros(Int64, Ninstances)
+        num_swaps = zeros(Int64, Ninstances - 1)
         bias_means = []
 
         for i in 1:Ninstances
@@ -270,7 +303,7 @@ module Mainrun
                         " ",
                         itrj,
                         " ",
-                        100 * numaccepts[i] / itrj,
+                        100 * numaccepts[i] / itrj / field.NV / 2,
                         "%",
                         " # instance itrj accrate"
                     )
@@ -283,8 +316,9 @@ module Mainrun
                     accept_swap = tempering_swap!(
                         fields[i],
                         fields[i+1],
+                        biases[i],
                         biases[i+1],
-                        rng[1]
+                        rng[1],
                     )
                     num_swaps[i] += ifelse(accept_swap, 1, 0)
 
@@ -317,7 +351,7 @@ module Mainrun
                 "Acceptance rate ",
                 i,
                 ": ",
-                100 * numaccepts[i] / params.Nsweeps / fields[i].NV / 2 / mutli_hit,
+                100 * numaccepts[i] / params.Nsweeps / fields[i].NV / 2 / multi_hit,
                 "%"
             )
             if i < Ninstances
@@ -350,7 +384,7 @@ module Mainrun
             weights = calc_weights(q_vals[:,2], biases[i])
 
             open(params.weightfiles[i-1], "w") do io
-                writedlm(io, weights)
+                writedlm(io, [q_vals[:,1] weights])
             end
             
             write_to_file!(biases[i])

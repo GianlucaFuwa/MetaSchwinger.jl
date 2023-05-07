@@ -1,6 +1,8 @@
 module Metadynamics
+	using Base.Threads: nthreads, threadid
 	using DelimitedFiles
 	using ForwardDiff
+	using Polyester
 	using StatsBase
 	using Optimization 
 	using OptimizationOptimJL
@@ -10,7 +12,7 @@ module Metadynamics
 	import ..System_parameters: Params
 	import ..Verbose_print: Verbose, Verbose_, println_verbose
 	
-	struct Bias_potential{O}
+	struct BiasPotential{O}
 		is_static::Bool
 		symmetric::Bool
 
@@ -40,7 +42,7 @@ module Metadynamics
 		fp::Union{Nothing, IOStream}
 		KS_fp::Union{Nothing, Verbose}
 		
-		function Bias_potential(p::Params; instance::Int64 = 1)
+		function BiasPotential(p::Params; instance::Int64 = 1)
 			is_static = instance==0 ? true : p.is_static[instance]
 			symmetric = p.symmetric
 
@@ -76,17 +78,31 @@ module Metadynamics
 			well_tempered = p.well_tempered
 			ΔT = p.ΔT
 
-			values = instance==0 ? potential_from_file(p,nothing) : potential_from_file(p, p.usebiases[instance])
+			if instance == 0
+				values = potential_from_file(p, nothing)
+			else
+				values = potential_from_file(p, p.usebiases[instance])
+			end
+
 			cv_vals = range(CVlims[1], CVlims[2], step=bin_width)
 
 			exceeded_count = 0
 			fp = instance==0 ? nothing : open(p.biasfiles[instance], "w")
-			KS_fp = p.parametric==true ? Verbose_(open(pwd()*p.savebias_dir*"/"*p.testfun*"_tests_"*p.minimizer*".txt", "w")) : nothing
+
+			if p.parametric == true
+				KS_fp = Verbose_(open(
+					pwd() * p.measure_dir * "/" * p.testfun * "_" * p.minimizer*".txt",
+					"w",
+				)) 
+			else
+				KS_fp = nothing
+			end
 
 			return new{typeof(minimizer)}(
 			is_static, symmetric,
 			CVlims, bin_width, w, k,
-			parametric, current_parameters, lower_bounds, upper_bounds, batchsize, cv_storage, bias_storage, fullbias_storage, testfun, minimizer,
+			parametric, current_parameters, lower_bounds, upper_bounds, batchsize,
+			cv_storage, bias_storage, fullbias_storage, testfun, minimizer,
 			well_tempered, ΔT,
 			values, cv_vals,
 			exceeded_count, fp, KS_fp,
@@ -96,95 +112,108 @@ module Metadynamics
 
 	function potential_from_file(p::Params, usebias::Union{Nothing,String})
 		if usebias === nothing
-			return zeros(round(Int, (p.CVlims[2] - p.CVlims[1]) / p.bin_width, RoundNearestTiesAway) + 1)
+			len = 1 + round(
+				Int,
+				(p.CVlims[2] - p.CVlims[1]) / p.bin_width,
+				RoundNearestTiesAway
+			)
+			return zeros(len)
 		else
 			values = readdlm(usebias, Float64, comments = true)
-			len = round(Int, (p.CVlims[2] - p.CVlims[1]) / p.bin_width, RoundNearestTiesAway) + 1
-			@assert length(values[:,2]) == len  "Potential length should be $len but is $(length(values[:,2]))"
+			len = 1 + round(
+				Int,
+				(p.CVlims[2] - p.CVlims[1]) / p.bin_width,
+				RoundNearestTiesAway
+			)
+			@assert length(values[:,2]) == len  "Potential length doesn't match parameters"
 			return values[:,2]
 		end
 	end
 
-	function write_to_file!(b::Bias_potential)
+	function write_to_file!(b::BiasPotential)
+
 		for (idx, cv) in enumerate(b.cv_vals)
-			value = ReturnPotential(b, cv)
+			value = b(cv)
 			println(b.fp, "$cv $value # Metapotential")
 		end
+
 		return nothing
 	end
 
-	function Base.flush(b::Bias_potential)
+	function Base.flush(b::BiasPotential)
         if b.fp !== nothing
             flush(b.fp)
         end
     end
 
-	function Base.seekstart(b::Bias_potential)
+	function Base.seekstart(b::BiasPotential)
 		if b.fp !== nothing
             seekstart(b.fp)
         end
     end
 
-	function Base.setindex!(b::Bias_potential, v, i)
+	function Base.setindex!(b::BiasPotential, v, i)
 		b.values[min(length(b.values), max(i, 1))] = v
 		return nothing
 	end
 
-	@inline function Base.getindex(b::Bias_potential,i)
+	@inline function Base.getindex(b::BiasPotential,i)
 		return b.values[min(length(b.values), max(i, 1))]
 	end
 
-	@inline function index(b::Bias_potential, cv)
+	@inline function index(b::BiasPotential, cv)
 		grid_index = (cv - b.CVlims[1]) / b.bin_width + 0.5
 		return round(Int, grid_index, RoundNearestTiesAway)
 	end
 
-	function Base.sum(b::Bias_potential)
+	function Base.sum(b::BiasPotential)
 		return sum(b.values)
 	end
 
-	is_static(b::Bias_potential) = b.is_static
-	is_symmetric(b::Bias_potential) = b.symmetric
-	is_well_tempered(b::Bias_potential) = b.well_tempered
-	is_parametric(b::Bias_potential) = b.parametric
+	is_static(b::BiasPotential) = b.is_static
+	is_symmetric(b::BiasPotential) = b.symmetric
+	is_well_tempered(b::BiasPotential) = b.well_tempered
+	is_parametric(b::BiasPotential) = b.parametric
 
-	get_CVlims(b::Bias_potential) = b.CVlims
-	get_parameters(b::Bias_potential) = b.current_parameters
-	get_bounds(b::Bias_potential) = b.lower_bounds, b.upper_bounds
-	get_minimizer(b::Bias_potential) = b.minimizer
-	get_batchsize(b::Bias_potential) = b.batchsize
-	get_cvstorage(b::Bias_potential) = b.cv_storage
-	get_biasstorage(b::Bias_potential) = b.bias_storage
-	get_fullbiasstorage(b::Bias_potential) = b.fullbias_storage
+	get_CVlims(b::BiasPotential) = b.CVlims
+	get_parameters(b::BiasPotential) = b.current_parameters
+	get_bounds(b::BiasPotential) = b.lower_bounds, b.upper_bounds
+	get_minimizer(b::BiasPotential) = b.minimizer
+	get_batchsize(b::BiasPotential) = b.batchsize
+	get_cvstorage(b::BiasPotential) = b.cv_storage
+	get_biasstorage(b::BiasPotential) = b.bias_storage
+	get_fullbiasstorage(b::BiasPotential) = b.fullbias_storage
 
-	function update_bias!(b::Bias_potential, cv; itrj = nothing)
+	function update_bias!(b::BiasPotential, cv; itrj = nothing)
 		if is_static(b)
 			return nothing
 		elseif is_parametric(b) == false
 			update_bias_regular!(b, cv)
+
 			if is_symmetric(b)
 				update_bias_regular!(b, -cv)
 			end
+
 		elseif is_parametric(b) == true
 			update_bias_parametric!(b, cv, itrj)
 		end
 	end 
 
-	function update_bias_regular!(b::Bias_potential, cv)
+	function update_bias_regular!(b::BiasPotential, cv)
 		grid_index = index(b, cv)
 
 		if 1 <= grid_index < length(b.values)
 			for (idx, current_bin) in enumerate(b.cv_vals)
-				well_tempered_fac = is_well_tempered(b) ? exp(-b[idx] / b.ΔT) : 1
-				b[idx] += well_tempered_fac*b.w*exp(-0.5(cv-current_bin)^2 / b.bin_width^2)
+				fac = b.well_tempered ? exp(-b[idx] / b.ΔT) : 1
+				b[idx] += fac * b.w * exp(-0.5(cv - current_bin)^2 / b.bin_width^2)
 			end	
 		end
 
 		return nothing
 	end
 
-	function update_bias_parametric!(b::Bias_potential, cv , itrj)
-		batchsize = get_batchsize(b)
+	function update_bias_parametric!(b::BiasPotential, cv, itrj)
+		batchsize = b.batchsize
 		idx = mod1(itrj, batchsize)
 		push!(b.cv_storage, cv)
 		push!(b.bias_storage, b(cv))
@@ -200,11 +229,19 @@ module Metadynamics
 			lb, ub = get_bounds(b)
 			minimizer = get_minimizer(b)
 			f = OptimizationFunction(b.testfun, Optimization.AutoForwardDiff())
-			sol = solve(OptimizationProblem(f, p, b, lb=lb, ub=ub), minimizer, time_limit = 60)
+			sol = solve(
+				OptimizationProblem(f, p, b, lb = lb, ub = ub),
+				minimizer,
+				time_limit = 60,
+			)
 			b.current_parameters .= sol.u
 			test = b.testfun(p, b)
-			println_verbose(b.KS_fp, "$itrj $(sol.u[1]) $(sol.u[2]) $(sol.u[3]) $test # itrj parameters test")
-			println("========================================")
+			println_verbose(
+				b.KS_fp,
+				itrj, " ", sol.u[1], " ", sol.u[2], " ", sol.u[3], " ", test,
+				"# itrj parameters test"
+			)
+			println("==============================================")
 			flush(b.KS_fp)
 		end
 
@@ -221,9 +258,9 @@ module Metadynamics
 		return A * cv^2 + B * cos(π * cv * C)^2
 	end
 
-	function KStest(parameters, b::Bias_potential)
-		Sg = cv -> parametricFES(parameters, cv)
-		batchsize = get_batchsize(b)
+	function KStest(parameters, b::BiasPotential)
+		#Sg = cv -> parametricFES(parameters, cv)
+		batchsize = b.batchsize
 
 		cv_data = get_cvstorage(b)
 		len = length(cv_data)
@@ -254,9 +291,9 @@ module Metadynamics
 		return max(l, r)
 	end
 
-	function GADtest(parameters, b::Bias_potential)		
-		Sg = cv -> parametricFES(parameters, cv)
-		batchsize = get_batchsize(b)
+	function GADtest(parameters, b::BiasPotential)		
+		#Sg = cv -> parametricFES(parameters, cv)
+		batchsize = b.batchsize
 
 		cv_data = get_cvstorage(b)
 		len = length(cv_data)
@@ -288,9 +325,9 @@ module Metadynamics
 		return batchsize * (-1 - log(u_n) - log(1-u_1) + S)
 	end
 
-	function GADLTtest(parameters, b::Bias_potential)
-		Sg = cv -> parametricFES(parameters, cv)
-		batchsize = get_batchsize(b)
+	function GADLTtest(parameters, b::BiasPotential)
+		#Sg = cv -> parametricFES(parameters, cv)
+		batchsize = b.batchsize
 
 		cv_data = get_cvstorage(b)
 		len = length(cv_data)
@@ -321,7 +358,7 @@ module Metadynamics
 		return batchsize * (0.5 - 2p_n * (1-u_n) - p_n^2 * log(u_n) + S)
 	end
 
-	function weight_for_cdf(parameters, cv, bias, fullbias, b::Bias_potential)
+	function weight_for_cdf(parameters, cv, bias, fullbias, b::BiasPotential)
 		cv_vals = b.cv_vals
 		inorm = parametric_norm(parameters, fullbias, cv_vals)
 		weight = inorm * exp( parametricFES(parameters, cv) + bias )
@@ -329,25 +366,25 @@ module Metadynamics
 	end
 	
 	function parametric_norm(parameters, old_bias, cv_vals)
-		normA = 0.0
+		normA = zeros(nthreads() * 8)
 		i = 0
 
-		for cv in cv_vals
+		@batch for cv in cv_vals
 			i += 1
-			normA += exp(-parametricFES(parameters, cv) - old_bias[i])
+			normA[threadid() * 8] += exp(-parametricFES(parameters, cv) - old_bias[i])
 			#normA += exp( -parametricFES(parameters, cv) -
 			#	parametricBias(old_bias, cv) )
 		end
 
-		return normA
+		return sum(normA)
 	end
 
 	function wantedCDF(cv::Float64, cvmin, cvmax)
 		return (cv - cvmin) / (cvmax - cvmin)
 	end
 	
-	function parametric_to_bias!(b::Bias_potential)
-		parameters = get_parameters(b)
+	function parametric_to_bias!(b::BiasPotential)
+		parameters = b.current_parameters
 
 		for (idx, cv) in enumerate(b.cv_vals)
 			b[idx] = parametricBias(parameters, cv)
@@ -356,11 +393,11 @@ module Metadynamics
 		return nothing
 	end
 
-	function (b::Bias_potential)(cv::Float64)
-		return ReturnPotential(b, cv)
+	function (b::BiasPotential)(cv::Float64)
+		return return_potential(b, cv)
 	end
 
-	function ReturnPotential(b::Bias_potential, cv)
+	function return_potential(b::BiasPotential, cv)
 		cvmin, cvmax = get_CVlims(b)
 
 		if cvmin <= cv < cvmax
@@ -370,11 +407,6 @@ module Metadynamics
 			penalty = b.k * (0.1 + min((cv-cvmin)^2, (cv-cvmax)^2))
 			return penalty
 		end
-	end
-
-	function DeltaV(b::Bias_potential, cvold, cvnew)
-		dV = b(cvnew) - b(cvold)
-		return dV
 	end
 
 end

@@ -1,9 +1,10 @@
 module Observables
+    using Arpack
 
-    import ..Gaugefields: Gaugefield, plaquette, poly_loop, staple
-    import ..Gaugefields: wilson_loop, wilson_loop_avg
+    import ..Gaugefields: circshift, Gaugefield, plaquette
+    import ..Gaugefields: wilson_loop
 
-    function MetaCharge(g::Gaugefield)
+    function meta_charge(g::Gaugefield)
 		NX, NT, _ = size(g)
 		q = 0.0
 
@@ -16,13 +17,13 @@ module Observables
 		return q / 2π
 	end
 
-    function TopCharge(g::Gaugefield)
+    function topological_charge(g::Gaugefield)
         NX, NT, _ = size(g)
         q = 0.0 + 0.0im
 
         for it in 1:NT
             for ix in 1:NX
-                @inbounds q += log(exp(plaquette(g, ix, it) * im))
+                @inbounds q += log(cis(plaquette(g, ix, it)))
             end
         end
 
@@ -53,5 +54,52 @@ module Observables
 
         return poly_re / NX, poly_im / NX
     end
+
+    function poly_loop(g::Gaugefield, ix)
+		_, NT, _ = size(g)
+		poly = 0.0
+
+		for it in 1:NT
+			poly += g[ix,it,2]
+		end
+		
+		return cos(poly), sin(poly)
+	end 
+
+	function wilson_loop_avg(g::Gaugefield, LX, LT; tempgauge = false)
+		NX, NT, _ = size(g)
+		wils = zeros(NX, NT)
+		x_up_side = zeros(NX, NT)
+		t_up_side = zeros(NX, NT)
+		x_down_side = zeros(NX, NT)
+		t_down_side = zeros(NX, NT)
+
+		if tempgauge == true
+
+			for i in 0:LX-1
+				x_up_side += circshift(g, (i,0), 1)
+				x_down_side -= circshift(g, (i,LT), 1)
+			end
+
+			wils = x_up_side + x_down_side
+			return sum(cis.(wils)) / g.NV
+		elseif tempgauge == false
+
+			for i in 0:LX-1
+				x_up_side += circshift(g, (i,0), 1)
+				x_down_side -= circshift(g, (i,LT), 1)
+			end
+			
+			for i in 0:LT-1
+				t_up_side += circshift(g, (LX,i), 1)
+				t_down_side -= circshift(g, (0,i), 1)
+			end
+
+			wils = x_up_side + t_up_side + x_down_side + t_down_side
+			return sum(cis.(wils)) / g.NV
+		else
+			error("tempgauge in Wilson loop calculation can only either be true or false")
+		end
+	end
 
 end

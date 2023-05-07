@@ -35,36 +35,58 @@ module Gaugefields
 	function Base.size(g::Gaugefield)
 		return g.NX, g.NT, 2
 	end
-
+	# Need to overload get- and setproperty! to be able to change Sg and CV
 	function Base.getproperty(g::Gaugefield, p::Symbol)
 		if p === :Sg 
-			return getfield(g, :Sg)[]
+			return getfield(g, p)[]
 		elseif p === :CV
-			return getfield(g, :CV)[]
+			return getfield(g, p)[]
 		else 
 			return getfield(g, p)
 		end
 	end
 
-	# Need to overload setproperty! to be able to change Sg and CV
 	function Base.setproperty!(g::Gaugefield, p::Symbol, val)
 		if p === :Sg 
-			return getfield(g, :Sg)[] = val
+			getfield(g, p)[] = val
 		elseif p === :CV
-			return getfield(g, :CV)[] = val
+			getfield(g, p)[] = val
 		else 
-			return setfield!(g, p, val)
+			setfield!(g, p, val)
 		end
+
+		return nothing
+	end	
+	
+	function Base.circshift(g::Gaugefield, shifts::NTuple{2,Int}, μ::Int64)
+		return circshift(g[:,:,μ], shifts)
 	end
 
-	function add_Sg!(g::Gaugefield, val)
-		g.Sg += val
+	function substitute_U!(g::Gaugefield, U)
+		NX, NT, d = size(g)
+
+		for μ in 1:d
+			for it in 1:NT
+				for ix in 1:NX
+					g[ix,it,μ] = U[ix,it,μ]
+				end
+			end
+		end
+
 		return nothing
 	end
 
-	function add_CV!(g::Gaugefield, val)
-		g.CV += val
-		return nothing
+	function calc_Sg(g::Gaugefield)
+		NX, NT, _ = size(g)
+		s = 0.0
+
+		for it in 1:NT
+			for ix in 1:NX
+				s += 1 - cos(plaquette(g, ix, it))
+			end
+		end
+
+		return g.β * s
 	end
 	
 	function recalc_Sg!(g::Gaugefield)
@@ -112,7 +134,7 @@ module Gaugefields
 			end
 		end
 
-		return plaq_real,plaq_imag
+		return plaq_real, plaq_imag
 	end
 	
 	function wilson_loop(g::Gaugefield, LX, LT, ix, it; tempgauge = false)
@@ -123,68 +145,26 @@ module Gaugefields
 		t_down_side = 0.0
 
 		if tempgauge == true
+
 			for i in 0:LX-1
 				x_up_side += g[mod1(ix+i, NX),it,1] 
 				x_down_side -= g[mod1(ix+i, NX),mod1(it+LT, NT),1]
 			end
+			
 			return exp(x_up_side + x_down_side)
 		elseif tempgauge == false
+
 			for i in 0:LX-1
 				x_up_side += g[mod1(ix+i, NX),it,1] 
 				x_down_side -= g[mod1(ix+i, NX),mod1(it+LT, NT),1]
 			end
+
 			for i in 0:LT-1
 				t_up_side += g[mod1(ix+LX, NX),mod1(it+i, NT),2]
 				t_down_side -= g[ix,mod1(it+i, NT),2]
 			end
+
 			return x_up_side + t_up_side + x_down_side + t_down_side
-		else
-			error("tempgauge in Wilson loop calculation can only either be true or false")
-		end
-	end
-
-	function Base.circshift(g::Gaugefield, shifts::NTuple{2,Int}, μ::Int64)
-		return circshift(g[:,:,μ], shifts)
-	end
-
-	function poly_loop(g::Gaugefield, ix)
-		_, NT, _ = size(g)
-		poly = 0.0
-
-		for it in 1:NT
-			poly += g[ix,it,2]
-		end
-		
-		return cos(poly), sin(poly)
-	end 
-
-	function wilson_loop_avg(g::Gaugefield, LX, LT; tempgauge = false)
-		NX, NT, _ = size(g)
-		wils = zeros(NX, NT)
-		x_up_side = zeros(NX, NT)
-		t_up_side = zeros(NX, NT)
-		x_down_side = zeros(NX, NT)
-		t_down_side = zeros(NX, NT)
-
-		if tempgauge == true
-			for i in 0:LX-1
-				x_up_side += circshift(g, (i,0), 1)
-				x_down_side -= circshift(g, (i,LT), 1)
-			end
-			wils = x_up_side + x_down_side
-			return sum(exp.(im * wils)) / g.NV
-		elseif tempgauge == false
-			for i in 0:LX-1
-				x_up_side += circshift(g, (i,0), 1)
-				x_down_side -= circshift(g, (i,LT), 1)
-			end
-			for i in 0:LT-1
-				t_up_side += circshift(g, (LX,i), 1)
-				t_down_side -= circshift(g, (0,i), 1)
-			end
-
-			wils = x_up_side + t_up_side + x_down_side + t_down_side
-			return sum(exp.(im * wils)) / g.NV
 		else
 			error("tempgauge in Wilson loop calculation can only either be true or false")
 		end
@@ -205,49 +185,7 @@ module Gaugefields
 			r = -g[ix_min,it,1] + g[ix_min,it,2] + g[ix_min,it_plu,1]
 		end
 
-		return exp(l*im)+exp(r*im)
-	end
-	
-	function daction(g::Gaugefield, ix, it, μ, dU)
-		link_old = g[ix,it,μ]
-		A = staple(g, ix, it, μ)
-		return -g.β * real((exp((link_old + dU) * im) - exp(link_old * im)) * A') 
-	end
-	#
-	function dqar(g::Gaugefield, ix, it, μ, dU)
-		NX, NT, _ = size(g)
-		it_min = mod1(it-1, NT)
-		it_plu = mod1(it+1, NT)
-		ix_min = mod1(ix-1, NX)
-		ix_plu = mod1(ix+1, NX)
-
-		if μ == 1
-			a = g[ix,it    ,1]+dU + g[ix_plu,it    ,2] - g[ix,it_plu,1]    - g[ix,it    ,2]
-			b = g[ix,it_min,1]    + g[ix_plu,it_min,2] - g[ix,it    ,1]-dU - g[ix,it_min,2]
-			c = g[ix,it    ,1]    + g[ix_plu,it    ,2] - g[ix,it_plu,1]    - g[ix,it    ,2]
-			d = g[ix,it_min,1]    + g[ix_plu,it_min,2] - g[ix,it    ,1]    - g[ix,it_min,2]
-		elseif μ == 2
-			a = g[ix_min,it,1] + g[ix    ,it,2]+dU - g[ix_min,it_plu,1] - g[ix_min,it,2]
-			b = g[ix    ,it,1] + g[ix_plu,it,2]    - g[ix    ,it_plu,1] - g[ix    ,it,2]-dU
-			c = g[ix_min,it,1] + g[ix    ,it,2]    - g[ix_min,it_plu,1] - g[ix_min,it,2]
-			d = g[ix    ,it,1] + g[ix_plu,it,2]    - g[ix    ,it_plu,1] - g[ix    ,it,2]
-		end
-
-		return (sin(a) + sin(b) - sin(c) - sin(d)) / 2π
-	end
-
-	function swap!(a::Gaugefield, b::Gaugefield)
-		NX, NT, _ = size(a)
-
-		for μ in 1:2
-			for it in 1:NT
-				for ix in 1:NX
-					a[ix,it,μ], b[ix,it,μ] = b[ix,it,μ], a[ix,it,μ]
-				end
-			end
-		end
-
-		return nothing
+		return cis(l) + cis(r)
 	end
 	
 end
