@@ -12,7 +12,7 @@ Variations of Metadynamics in Simulations of the Schwinger Model (1+1D QED)
 julia src/build.jl templates/build_parameters.jl
 ```
 
-2. Use built Metapotential to measure observables in second run (use: template/parameters_meas.jl to see structure) and do:
+2. Use Metapotential to measure observables in second run (use: template/parameters_meas.jl to see structure) and do:
 ```
 julia -t 2 src/run.jl templates/sim_parameters.jl
 ```
