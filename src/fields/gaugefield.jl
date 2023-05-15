@@ -90,16 +90,7 @@ module Gaugefields
 	end
 	
 	function recalc_Sg!(g::Gaugefield)
-		NX, NT, _ = size(g)
-		s = 0.0
-
-		for it in 1:NT
-			for ix in 1:NX
-				s += 1 - cos(plaquette(g, ix, it))
-			end
-		end
-
-		g.Sg = g.β * s
+		g.Sg = calc_Sg(g)
 		return nothing
 	end
 
