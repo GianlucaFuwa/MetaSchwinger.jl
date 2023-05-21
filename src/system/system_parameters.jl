@@ -20,6 +20,7 @@ module System_parameters
         "k",
         "is_static",
         "ΔT",
+        "take_snapshot_every",
     ]
 
     printlist_param_meta = [
@@ -36,9 +37,11 @@ module System_parameters
         "Ntherm",
         "Nsweeps",
         "initial",
+        "starting_Q",
         "instanton_enabled",
         "tempering_enabled",
         "Ninstances",
+        "no_zero_instance",
         "swap_every",
     ]
 
@@ -73,6 +76,7 @@ module System_parameters
         "biasfile",
         "usebiases",
         "weightfile",
+        "snapshot_dir",
     ]
 
     const printlists = [
@@ -121,6 +125,7 @@ module System_parameters
     meta["parametric"] = false
     meta["is_static"] = [false]
     meta["well_tempered"] = false
+    meta["take_snapshot_every"] = nothing
 
     param_meta["lower_bounds"] = nothing
     param_meta["upper_bounds"] = nothing
@@ -128,8 +133,10 @@ module System_parameters
     param_meta["testfun"] = nothing
     param_meta["minimizer"] = nothing
 
+    sim["starting_Q"] = nothing
     sim["instanton_enabled"] = false
     sim["tempering_enabled"] = false
+    sim["no_zero_instance"] = false
 
     mc["update_method"] = "Local"
     mc["multi_hit"] = 1
@@ -177,6 +184,7 @@ module System_parameters
         is_static::Union{Nothing, Vector{Bool}}
         well_tempered::Union{Nothing, Bool}
         ΔT::Union{Nothing, Float64}
+        take_snapshot_every::Union{Nothing, Int64}
 
         potential_parameters::Union{Nothing, Vector{Float64}}
         lower_bounds::Union{Nothing, Vector{Float64}}
@@ -188,9 +196,11 @@ module System_parameters
 		Ntherm::Int64
 		Nsweeps::Int64
 		initial::String
+        starting_Q::Union{Nothing, Vector{Int64}}
         instanton_enabled::Bool
         tempering_enabled::Union{Nothing, Bool}
         Ninstances::Union{Nothing, Int64}
+        no_zero_instance::Union{Nothing, Bool}
         swap_every::Union{Nothing, Int64}
 
         update_method::String
@@ -214,6 +224,7 @@ module System_parameters
 		biasfiles::Union{Nothing, Vector{String}}
 		usebiases::Union{Nothing, Vector{Union{Nothing, String}}}
         weightfiles::Union{Nothing, Vector{String}}
+        snapshot_dir::Union{Nothing, String}
 
 		function Params(physical, meta, param_meta, sim, mc, dirac, meas, system)
 			N = physical["N"]
@@ -233,6 +244,7 @@ module System_parameters
                 is_static = meta["is_static"]
                 well_tempered = meta["well_tempered"]
                 ΔT = well_tempered==true ? meta["ΔT"] : nothing
+                take_snapshot_every = meta["take_snapshot_every"]
                 potential_parameters = parametric==true ? param_meta["potential_parameters"] : nothing
                 lower_bounds = parametric==true ? param_meta["lower_bounds"] : nothing
                 upper_bounds = parametric==true ? param_meta["upper_bounds"] : nothing
@@ -241,6 +253,7 @@ module System_parameters
                 minimizer = parametric==true ? param_meta["minimizer"] : nothing
 
                 savebias_dir = system["savebias_dir"]
+                
                 biasfiles = []
                 usebiases = []
                 weightfiles = []
@@ -249,6 +262,7 @@ module System_parameters
                 if tempering_enabled == true
                     swap_every = sim["swap_every"]
                     Ninstances = sim["Ninstances"]
+                    no_zero_instance = sim["no_zero_instance"]
 
                     if haskey(system,"usebiases")
                         usebiases = system["usebiases"]
@@ -256,7 +270,7 @@ module System_parameters
                         push!(usebiases,nothing)
                     end
 
-                    for i in 1:Ninstances-1
+                    for i in 1:Ninstances - !no_zero_instance
                         push!(biasfiles, pwd() * "/" * savebias_dir * "/" * system["biasfile"]*"_$i.txt")
                         push!(weightfiles, pwd() * "/" * measure_dir * "/Weights_$i.txt")
                     end
@@ -274,6 +288,14 @@ module System_parameters
                 if isdir(savebias_dir) == false
                     mkpath(savebias_dir)
                 end
+
+                if take_snapshot_every !== nothing
+                    snapshot_dir = savebias_dir * "/" * system["snapshot_dir"]
+
+                    if isdir(snapshot_dir) == false
+                        mkpath(snapshot_dir)
+                    end
+                end
             else # IF NO META
                 parametric = nothing
                 potential_parameters = nothing
@@ -290,13 +312,16 @@ module System_parameters
                 is_static = nothing
                 well_tempered = nothing
                 ΔT = nothing
+                take_snapshot_every = nothing
                 savebias_dir = nothing
                 biasfiles = nothing
                 usebiases = nothing
                 weightfiles = nothing
+                snapshot_dir = nothing
                 tempering_enabled = nothing
             end # END IF META
 
+            starting_Q = sim["starting_Q"]
             instanton_enabled = sim["instanton_enabled"]
             Ntherm = sim["Ntherm"]
 			Nsweeps = sim["Nsweeps"]
@@ -320,9 +345,11 @@ module System_parameters
 
             if tempering_enabled == true
                 Ninstances = sim["Ninstances"]
+                no_zero_instance = sim["no_zero_instance"]
                 swap_every = sim["swap_every"]
             else
                 Ninstances = nothing
+                no_zero_instance = nothing
                 swap_every = nothing
             end
 
@@ -334,8 +361,8 @@ module System_parameters
 				mkpath(logdir)
 			end
 
-			logfile = pwd() * "/" * logdir * "/" * system["logfile"]
-			loadfile = open(logfile,"a")
+			logfile = pwd() * "/" * logdir * "/" * system["logfile"] * ".txt"
+			loadfile = open(logfile, "a")
 
             if isdir(measure_dir) == false
                 mkpath(measure_dir)
@@ -343,13 +370,14 @@ module System_parameters
             
 			return new(
 				N, β,
-                meta_enabled, parametric, symmetric, CVlims, bin_width, w, k, is_static, well_tempered, ΔT,
+                meta_enabled, parametric, symmetric, CVlims, bin_width, w, k, is_static, well_tempered, ΔT, take_snapshot_every,
                 potential_parameters, lower_bounds, upper_bounds, batchsize, testfun, minimizer,
-                Ntherm, Nsweeps, initial, instanton_enabled, tempering_enabled, Ninstances, swap_every,
+                Ntherm, Nsweeps, initial, starting_Q, instanton_enabled, tempering_enabled, Ninstances, no_zero_instance, swap_every,
                 update_method, ϵ_metro, multi_hit, metro_target_acc,
                 Dirac_operator, mass, BC,
                 meas_calls,
-                veryverbose, randomseeds, logdir, logfile, loadfile, measure_dir, savebias_dir, biasfiles, usebiases, weightfiles)
+                veryverbose, randomseeds, logdir, logfile, loadfile, measure_dir, savebias_dir, biasfiles, usebiases, weightfiles, snapshot_dir,
+            )
 		end
 
 		function Params(params_set::ParamSet)

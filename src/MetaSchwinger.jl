@@ -17,7 +17,7 @@ module MetaSchwinger
     import .Gaugefields: calc_Sg, Gaugefield, plaquette, recalc_CV!, recalc_Sg!
     import .MetroUpdate: local_action_diff, local_metacharge_diff
     import .MetroUpdate: metropolis!, metropolis_meta!, sweep!, sweep_meta!
-    import .InstantonUpdate: instanton_update!
+    import .InstantonUpdate: instanton!, instanton_update!
     import .Mainrun: run_sim
     import .Mainbuild: run_build
     import .Measurements: calc_weights, MeasurementSet, measurements

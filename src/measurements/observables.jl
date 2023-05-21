@@ -19,15 +19,15 @@ module Observables
 
     function topological_charge(g::Gaugefield)
         NX, NT, _ = size(g)
-        q = 0.0 + 0.0im
+        q = 0.0
 
         for it in 1:NT
             for ix in 1:NX
-                @inbounds q += log(cis(plaquette(g, ix, it)))
+                @inbounds q += imag(log(cis(plaquette(g, ix, it))))
             end
         end
 
-        return round(Int, imag(q) / 2π, RoundNearestTiesAway)
+        return round(Int, q / 2π, RoundNearestTiesAway)
     end
 
     function wilson_loop_all(g::Gaugefield, LT)

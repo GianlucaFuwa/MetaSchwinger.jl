@@ -101,13 +101,35 @@ module MetroUpdate
 	function adjusted_ϵ(ϵ, numaccepts, metro_norm, metro_target_acc)
 		return 	ϵ + (numaccepts * metro_norm - metro_target_acc) * 0.2
 	end
-
+	#=
 	function local_action_diff(g::Gaugefield, ix, it, μ, dU)
 		link_old = g[ix,it,μ]
 		A = staple(g, ix, it, μ)
 		return -g.β * real((cis((link_old + dU)) - cis(link_old)) * A') 
 	end
-	
+	=#
+	function local_action_diff(g::Gaugefield, ix, it, μ, dU)
+		NX, NT, _ = size(g)
+		it_min = mod1(it - 1, NT)
+		it_plu = mod1(it + 1, NT)
+		ix_min = mod1(ix - 1, NX)
+		ix_plu = mod1(ix + 1, NX)
+
+		if μ == 1
+			a = g[ix,it    ,1]+dU + g[ix_plu,it    ,2] - g[ix,it_plu,1]    - g[ix,it    ,2]
+			b = g[ix,it_min,1]    + g[ix_plu,it_min,2] - g[ix,it    ,1]-dU - g[ix,it_min,2]
+			c = g[ix,it    ,1]    + g[ix_plu,it    ,2] - g[ix,it_plu,1]    - g[ix,it    ,2]
+			d = g[ix,it_min,1]    + g[ix_plu,it_min,2] - g[ix,it    ,1]    - g[ix,it_min,2]
+		elseif μ == 2
+			a = g[ix_min,it,1] + g[ix    ,it,2]+dU - g[ix_min,it_plu,1] - g[ix_min,it,2]
+			b = g[ix    ,it,1] + g[ix_plu,it,2]    - g[ix    ,it_plu,1] - g[ix    ,it,2]-dU
+			c = g[ix_min,it,1] + g[ix    ,it,2]    - g[ix_min,it_plu,1] - g[ix_min,it,2]
+			d = g[ix    ,it,1] + g[ix_plu,it,2]    - g[ix    ,it_plu,1] - g[ix    ,it,2]
+		end
+
+		return -g.β * (cos(a) + cos(b) - cos(c) - cos(d))
+	end
+	#
 	function local_metacharge_diff(g::Gaugefield, ix, it, μ, dU)
 		NX, NT, _ = size(g)
 		it_min = mod1(it - 1, NT)
@@ -127,7 +149,7 @@ module MetroUpdate
 			d = g[ix    ,it,1] + g[ix_plu,it,2]    - g[ix    ,it_plu,1] - g[ix    ,it,2]
 		end
 
-		return (sin(a) + sin(b) - sin(c) - sin(d)) / 2π
+		return 1 / 2π * (sin(a) + sin(b) - sin(c) - sin(d))
 	end
 
 end

@@ -8,7 +8,8 @@ module Tempering
 		field2::Gaugefield,
 		bias1::BiasPotential,
 		bias2::BiasPotential,
-		rng,
+		rng;
+		actually_swap::Bool = true, # "Fake swap" for when we want to do parallel building
 	)
 		CV1 = field1.CV
 		CV2 = field2.CV
@@ -19,7 +20,7 @@ module Tempering
 		ΔV2 = bias2(CV1) - bias2(CV2)
 		accept_swap = rand(rng) ≤ exp(- ΔV1 - ΔV2)
 
-		if accept_swap
+		if accept_swap && actually_swap
 			swap!(field1, field2)
 			field2.CV += ΔCV
 			field1.CV -= ΔCV

@@ -107,19 +107,30 @@ module Measurements
             measfile = measset.meas_files[i]
             if itr % method["measure_every"] == 0
                 if method["methodname"] == "Plaquette"
-                    plaq_re, plaq_im = plaquette_sum(field)
-                    plaq_re /= field.NV
-                    plaq_im /= field.NV
-                    println(measfile, "$itr $plaq_re $plaq_im # plaq_re plaq_im")
+                    plaq = plaquette_sum(field)
+                    plaq /= field.NV
+                    println(
+                        measfile,
+                        itr, " ", plaq, " # plaq",
+                    )
                 elseif method["methodname"] == "Action"
                     s = field.Sg / field.NV
-                    println(measfile, "$itr $s # action")
+                    println(
+                        measfile,
+                        itr, " ", s, " # action",
+                    )
                 elseif method["methodname"] == "Meta_charge" 
                     q = field.CV
-                    println(measfile, "$itr $q # metacharge")
+                    println(
+                        measfile,
+                        itr, " ", q, " # metacharge",
+                    )
                 elseif method["methodname"] == "Topological_charge"
                     qt = topological_charge(field)
-                    println(measfile, "$itr $qt $(qt^2) # Qtop Qtop^2")
+                    println(
+                        measfile,
+                        itr, " ", qt, " # topocharge",
+                    )
                 elseif method["methodname"] == "Polyakov_loop"
                     poly_re, poly_im = poly_loop_avg(field)
                     println(measfile, "$itr $poly_re $poly_im # poly_re poly_im")
@@ -151,7 +162,7 @@ module Measurements
                     logdetD = logdet(Ds)
                     println(
                         measfile,
-                        itr, " ", real(logdetD), " ", imag(logdetD), " # log(det(D))"
+                        itr, " ", real(logdetD), " ", imag(logdetD), " # log(det(D))",
                     )
                 elseif method["methodname"] == "Chiral_condensate"
                     if Du === nothing
@@ -161,14 +172,18 @@ module Measurements
                     cc = tr(inv(Du)) / field.NV
                     println(
                         measfile,
-                        itr, " ", real(cc), " ", imag(cc), " # chiral condensate")
+                        itr, " ", real(cc), " ", imag(cc), " # chiral condensate",
+                    )
                 elseif occursin( "Wilson_loop", method["methodname"])
                     num = filter.(isdigit, method["methodname"])
                     LT = parse(Int64, num)
                     wils_re, wils_im = wilson_loop_all(field, LT)
                     wils_re = round.(wils_re, sigdigits = 4)
                     wils_im = round.(wils_im, sigdigits = 4)
-                    println(measfile, "$itr $wils_re $wils_im # wilson_re wilson_im")
+                    println(
+                        measfile,
+                        itr, " ", wils_re, " ", wils_im, " # wilson_re wilson_im",
+                    )
                 else 
                     error("$(method["methodname"]) is not supported")
                 end

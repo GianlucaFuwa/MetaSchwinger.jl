@@ -22,6 +22,14 @@ module Gaugefields
 			CV = Base.RefValue{Float64}(0.0)
 			return new(NX, NT, NV, β, U, Sg, CV)
 		end
+
+		function Gaugefield(NX, NT, β)
+			NV = NX * NT
+			U = zeros(Float64, NX, NT, 2)
+			Sg = Base.RefValue{Float64}(0.0)
+			CV = Base.RefValue{Float64}(0.0)
+			return new(NX, NT, NV, β, U, Sg, CV)
+		end
 	end
 
 	function Base.setindex!(g::Gaugefield, v, ix, it, μ)
@@ -56,7 +64,22 @@ module Gaugefields
 		end
 
 		return nothing
-	end	
+	end
+
+	function Base.cis(g::Gaugefield)
+		NX, NT, d = size(g)
+		expiU = zeros(ComplexF64, NX, NT, d)
+
+		for ix in 1:NX
+			for it in 1:NT
+				for μ in 1:d
+					expiU[ix,it,μ] = cis(g[ix,it,μ])
+				end
+			end
+		end
+		
+		return expiU
+	end
 	
 	function Base.circshift(g::Gaugefield, shifts::NTuple{2,Int}, μ::Int64)
 		return circshift(g[:,:,μ], shifts)
@@ -90,7 +113,16 @@ module Gaugefields
 	end
 	
 	function recalc_Sg!(g::Gaugefield)
-		g.Sg = calc_Sg(g)
+		NX, NT, _ = size(g)
+		s = 0.0
+
+		for it in 1:NT; it_plu = mod1(it + 1, NT)
+			for ix in 1:NX; ix_plu = mod1(ix + 1, NX)
+				s += 1 - cos(g[ix,it,1] + g[ix_plu,it,2] - g[ix,it_plu,1] - g[ix,it,2])
+			end
+		end
+
+		g.Sg = g.β * s
 		return nothing
 	end
 
@@ -98,9 +130,9 @@ module Gaugefields
 		NX, NT, _ = size(g)
 		q = 0.0
 		 
-		for it in 1:NT
-			for ix in 1:NX
-				q += sin(plaquette(g, ix, it))
+		for it in 1:NT; it_plu = mod1(it + 1, NT)
+			for ix in 1:NX; ix_plu = mod1(ix + 1, NX)
+				q += sin(g[ix,it,1] + g[ix_plu,it,2] - g[ix,it_plu,1] - g[ix,it,2])
 			end
 		end
 
@@ -110,22 +142,22 @@ module Gaugefields
 	
 	function plaquette(g::Gaugefield, ix, it)
 		NX, NT, _ = size(g)
-		return g[ix,it,1] + g[mod1(ix+1,NX),it,2] - g[ix,mod1(it+1,NT),1] - g[ix,it,2]
+		ix_plu = mod1(ix + 1, NX)
+		it_plu = mod1(it + 1, NT)
+		return g[ix,it,1] + g[ix_plu,it,2] - g[ix,it_plu,1] - g[ix,it,2]
 	end
 
 	function plaquette_sum(g::Gaugefield)
 		NX, NT ,_ = size(g)
-		plaq_real = 0.0
-		plaq_imag = 0.0
+		plaq = 0.0
 
-		for it in 1:NT
-			for ix in 1:NX
-				plaq_real += cos(plaquette(g, ix, it))
-				plaq_imag += sin(plaquette(g, ix, it))
+		for it in 1:NT; it_plu = mod1(it + 1, NT)
+			for ix in 1:NX; ix_plu = mod1(ix + 1, NX)
+				plaq += cos(g[ix,it,1] + g[ix_plu,it,2] - g[ix,it_plu,1] - g[ix,it,2])
 			end
 		end
 
-		return plaq_real, plaq_imag
+		return plaq
 	end
 	
 	function wilson_loop(g::Gaugefield, LX, LT, ix, it; tempgauge = false)
@@ -142,7 +174,7 @@ module Gaugefields
 				x_down_side -= g[mod1(ix+i, NX),mod1(it+LT, NT),1]
 			end
 			
-			return exp(x_up_side + x_down_side)
+			return cis(x_up_side + x_down_side)
 		elseif tempgauge == false
 
 			for i in 0:LX-1
@@ -155,7 +187,7 @@ module Gaugefields
 				t_down_side -= g[ix,mod1(it+i, NT),2]
 			end
 
-			return x_up_side + t_up_side + x_down_side + t_down_side
+			return cis(x_up_side + t_up_side + x_down_side + t_down_side)
 		else
 			error("tempgauge in Wilson loop calculation can only either be true or false")
 		end
@@ -163,10 +195,10 @@ module Gaugefields
 	
 	function staple(g::Gaugefield, ix, it, μ)
 		NX, NT, _ = size(g)
-		it_min = mod1(it-1, NT)
-		it_plu = mod1(it+1, NT)
-		ix_min = mod1(ix-1, NX)
-		ix_plu = mod1(ix+1, NX)
+		it_min = mod1(it - 1, NT)
+		it_plu = mod1(it + 1, NT)
+		ix_min = mod1(ix - 1, NX)
+		ix_plu = mod1(ix + 1, NX)
 
 		if μ == 1
 			l =  g[ix,it    ,2] + g[ix,it_plu,1] - g[ix_plu,it    ,2]

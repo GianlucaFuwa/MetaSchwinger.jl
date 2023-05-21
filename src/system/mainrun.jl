@@ -7,7 +7,7 @@ module Mainrun
     import ..DiracOperatorModule: dirac_operator
     import ..Gaugefields: Gaugefield, recalc_Sg!, recalc_CV!
     import ..MetroUpdate: adjusted_ϵ, sweep!, sweep_meta!
-    import ..InstantonUpdate: instanton_update!
+    import ..InstantonUpdate: instanton!, instanton_update!
     import ..Metadynamics: BiasPotential, update_bias!, write_to_file!
     import ..Measurements: calc_weights, MeasurementSet, measurements
     import ..System_parameters: Params, ParamSet, parameterloading
@@ -36,10 +36,13 @@ module Mainrun
                 end
 
                 for i in 1:params.Ninstances
-                    push!(biases, BiasPotential(params, instance = i - 1))
+                    push!(
+                        biases,
+                        BiasPotential(params, instance = i - 1 + params.no_zero_instance),
+                    )
                 end
 
-                run_temperedsim!(fields, biases, params)
+                run_tempered_sim!(fields, biases, params)
             elseif !params.tempering_enabled
                 field = Gaugefield(params)
                 bias = BiasPotential(params)
@@ -228,7 +231,7 @@ module Mainrun
 
     #=====================================================================================#
     
-    function run_temperedsim!(
+    function run_tempered_sim!(
         fields::Vector{Gaugefield},
         biases::Vector{BiasPotential},
         params::Params
@@ -240,8 +243,10 @@ module Mainrun
         versioninfo(verbose)
         println_verbose(
             verbose,
-            "# Parallel tempered run with 1 regular instance and ",
-            params.Ninstances - 1,
+            "# Parallel tempered run with ",
+            Int(!params.no_zero_instance),
+            " regular instance and ",
+            Ninstances - !params.no_zero_instance,
             " MetaD instances"
         )
 
@@ -251,7 +256,7 @@ module Mainrun
             push!(
                 meassets,
                 MeasurementSet(params.measure_dir, meas_calls = params.meas_calls,
-                instance = "_$(i-1)")
+                instance = "_$(i - !params.no_zero_instance)")
             )
         end
 
@@ -278,6 +283,12 @@ module Mainrun
             end
         end
 
+        if params.starting_Q !== nothing
+            @threads for i in 1:Ninstances
+                instanton!(fields[i], params.starting_Q[i], rng[i], metro_test = false)
+            end
+        end
+
         numaccepts = zeros(Int64, Ninstances)
         num_swaps = zeros(Int64, Ninstances - 1)
         bias_means = []
@@ -287,28 +298,13 @@ module Mainrun
         end
 
         for itrj in 1:params.Nsweeps
+
             @threads for i in 1:Ninstances
                 tmp[i] = sweep_meta!(fields[i], biases[i], rng[i], ϵ, multi_hit)
                 ϵ = adjusted_ϵ(ϵ, tmp[i], metro_norm, metro_target_acc)
                 numaccepts[i] += tmp[i]
                 bias_means[i] += biases[i].values
                 update_bias!(biases[i], fields[i].CV)
-            end
-
-            if params.veryverbose == true
-                for i in 1:Ninstances
-                    println_verbose(
-                        verbose,
-                        i - 1,
-                        " ",
-                        itrj,
-                        " ",
-                        100 * numaccepts[i] / itrj / field.NV / 2,
-                        "%",
-                        " # instance itrj accrate"
-                    )
-                    println_verbose(verbose,"--------------------------------------------")
-                end
             end
 
             if itrj%params.swap_every == 0
@@ -319,21 +315,17 @@ module Mainrun
                         biases[i],
                         biases[i+1],
                         rng[1],
+                        actually_swap = false,
                     )
-                    num_swaps[i] += ifelse(accept_swap, 1, 0)
+                    num_swaps[i] += accept_swap
 
-                    if params.veryverbose == true
+                    if params.veryverbose == true && itrj%10000 == 0
                         println_verbose(
                             verbose,
-                            i,
-                            " ⇔ ",
-                            i + 1,
-                            " ",
-                            100 * num_swaps[i] / (itrj ÷ params.swap_every),
-                            "%",
-                            " # swapaccrate"
+                            num_swaps[i] / (10000 ÷ params.swap_every),
+                            " # swapaccrate $i ⇔ $(i+1)",
                         )
-                        println_verbose(verbose, "---------------------------------------")
+                        num_swaps[i] = 0
                     end
                 end
             end
@@ -343,12 +335,12 @@ module Mainrun
             end
         end
 
-        println_verbose(verbose, "Final ϵ_metro: ", ϵ)
+        println_verbose(verbose, "# Final ϵ_metro: ", ϵ)
 
         for i in 1:Ninstances
             println_verbose(
                 verbose,
-                "Acceptance rate ",
+                "# Acceptance rate ",
                 i,
                 ": ",
                 100 * numaccepts[i] / params.Nsweeps / fields[i].NV / 2 / multi_hit,
@@ -357,7 +349,7 @@ module Mainrun
             if i < Ninstances
                 println_verbose(
                     verbose,
-                    "Swap Acceptance rate ",
+                    "# Swap Acceptance rate ",
                     i,
                     " ⇔ ",
                     i + 1,
@@ -368,28 +360,28 @@ module Mainrun
             end
         end
 
-        for i in 2:Ninstances
+        for i in 1+!params.no_zero_instance:Ninstances
             println_verbose(
                 verbose,
-                "Exceeded Count ",
+                "# Exceeded Count ",
                 i - 1,
                 ": ",
                 biases[i].exceeded_count
             )
             q_vals = readdlm(
-                pwd() * "/" * params.measure_dir * "/Meta_charge_$(i-1).txt",
+                pwd() * "/" * params.measure_dir * "/Meta_charge_$(i - !params.no_zero_instance).txt",
                 Float64,
                 comments = true
             )
             weights = calc_weights(q_vals[:,2], biases[i])
 
-            open(params.weightfiles[i-1], "w") do io
+            open(params.weightfiles[i - !params.no_zero_instance], "w") do io
                 writedlm(io, [q_vals[:,1] weights])
             end
             
             write_to_file!(biases[i])
-            effective_samplesize = round(Int, sum(weights)^2/sum(weights.^2))
-            println_verbose(verbose, "Effective sample size $i: ", effective_samplesize)
+            effective_samplesize = round(Int, sum(weights)^2 / sum(weights.^2))
+            println_verbose(verbose, "# Effective sample size $i: ", effective_samplesize)
         end
 
         flush(stdout)

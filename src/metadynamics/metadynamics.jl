@@ -1,8 +1,6 @@
 module Metadynamics
-	using Base.Threads: nthreads, threadid
 	using DelimitedFiles
 	using ForwardDiff
-	using Polyester
 	using StatsBase
 	using Optimization 
 	using OptimizationOptimJL
@@ -130,11 +128,11 @@ module Metadynamics
 		end
 	end
 
-	function write_to_file!(b::BiasPotential)
+	function write_to_file!(b::BiasPotential, fp::IOStream)
 
 		for (idx, cv) in enumerate(b.cv_vals)
 			value = b(cv)
-			println(b.fp, "$cv $value # Metapotential")
+			println(fp, cv, " ", value, " # Metapotential")
 		end
 
 		return nothing
@@ -153,12 +151,12 @@ module Metadynamics
     end
 
 	function Base.setindex!(b::BiasPotential, v, i)
-		b.values[min(length(b.values), max(i, 1))] = v
+		b.values[i] = v
 		return nothing
 	end
 
 	@inline function Base.getindex(b::BiasPotential,i)
-		return b.values[min(length(b.values), max(i, 1))]
+		return b.values[i]
 	end
 
 	@inline function index(b::BiasPotential, cv)
@@ -170,33 +168,28 @@ module Metadynamics
 		return sum(b.values)
 	end
 
-	is_static(b::BiasPotential) = b.is_static
-	is_symmetric(b::BiasPotential) = b.symmetric
-	is_well_tempered(b::BiasPotential) = b.well_tempered
-	is_parametric(b::BiasPotential) = b.parametric
-
-	get_CVlims(b::BiasPotential) = b.CVlims
-	get_parameters(b::BiasPotential) = b.current_parameters
-	get_bounds(b::BiasPotential) = b.lower_bounds, b.upper_bounds
-	get_minimizer(b::BiasPotential) = b.minimizer
-	get_batchsize(b::BiasPotential) = b.batchsize
-	get_cvstorage(b::BiasPotential) = b.cv_storage
-	get_biasstorage(b::BiasPotential) = b.bias_storage
-	get_fullbiasstorage(b::BiasPotential) = b.fullbias_storage
+	function clear!(b::BiasPotential)
+		for i in eachindex(b.values)
+			b.values[i] = 0
+		end
+		
+		return nothing
+	end
 
 	function update_bias!(b::BiasPotential, cv; itrj = nothing)
-		if is_static(b)
-			return nothing
-		elseif is_parametric(b) == false
+		if b.is_static
+		elseif b.parametric == false
 			update_bias_regular!(b, cv)
 
-			if is_symmetric(b)
+			if b.symmetric
 				update_bias_regular!(b, -cv)
 			end
 
-		elseif is_parametric(b) == true
+		elseif b.parametric == true
 			update_bias_parametric!(b, cv, itrj)
 		end
+
+		return nothing
 	end 
 
 	function update_bias_regular!(b::BiasPotential, cv)
@@ -220,18 +213,16 @@ module Metadynamics
 		b.fullbias_storage[itrj] = b.values
 		update_bias_regular!(b, cv)
 
-		if is_symmetric(b)
+		if b.symmetric
 			update_bias_regular!(b, -cv)
 		end
 
 		if idx == batchsize
-			p = get_parameters(b)
-			lb, ub = get_bounds(b)
-			minimizer = get_minimizer(b)
+			p = b.current_parameters
 			f = OptimizationFunction(b.testfun, Optimization.AutoForwardDiff())
 			sol = solve(
-				OptimizationProblem(f, p, b, lb = lb, ub = ub),
-				minimizer,
+				OptimizationProblem(f, p, b, lb = b.lower_bounds, ub = b.upper_bounds),
+				b.minimizer,
 				time_limit = 60,
 			)
 			b.current_parameters .= sol.u
@@ -262,13 +253,13 @@ module Metadynamics
 		#Sg = cv -> parametricFES(parameters, cv)
 		batchsize = b.batchsize
 
-		cv_data = get_cvstorage(b)
+		cv_data = b.cv_storage
 		len = length(cv_data)
 		itvl = Int(len / batchsize)
 
 		weight = (cv, bias, fullbias) -> weight_for_cdf(parameters, cv, bias, fullbias, b)
-		bias_data = get_biasstorage(b)[1:itvl:end]
-		fullbias_data = get_fullbiasstorage(b)[1:itvl:len]
+		bias_data = b.bias_storage[1:itvl:end]
+		fullbias_data = b.fullbias_storage[1:itvl:len]
 		cv_data = cv_data[1:itvl:end]
 		cdf = ecdf(cv_data, weights = weight.(cv_data, bias_data, fullbias_data))
 		#cdf = ecdf(cv_data, weights = exp.(Sg.(cv_data) + bias_data))
@@ -291,17 +282,17 @@ module Metadynamics
 		return max(l, r)
 	end
 
-	function GADtest(parameters, b::BiasPotential)		
+	function GADtest(parameters, b::BiasPotential)
 		#Sg = cv -> parametricFES(parameters, cv)
 		batchsize = b.batchsize
 
-		cv_data = get_cvstorage(b)
+		cv_data = b.cv_storage
 		len = length(cv_data)
 		itvl = Int(len / batchsize)
 
 		weight = (cv, bias, fullbias) -> weight_for_cdf(parameters, cv, bias, fullbias, b)
-		bias_data = get_biasstorage(b)[1:itvl:len]
-		fullbias_data = get_fullbiasstorage(b)[1:itvl:len]
+		bias_data = b.bias_storage[1:itvl:len]
+		fullbias_data = b.fullbias_storage[1:itvl:len]
 		cv_data = cv_data[1:itvl:end]
 
 		#F = ecdf(cv_data, weights = exp.(Sg.(cv_data) + bias_data))
@@ -329,13 +320,13 @@ module Metadynamics
 		#Sg = cv -> parametricFES(parameters, cv)
 		batchsize = b.batchsize
 
-		cv_data = get_cvstorage(b)
+		cv_data = b.cv_storage
 		len = length(cv_data)
 		itvl = Int(len / batchsize)
 
 		weight = (cv, bias, fullbias) -> weight_for_cdf(parameters, cv, bias, fullbias, b)
-		bias_data = get_biasstorage(b)[1:itvl:len]
-		fullbias_data = get_fullbiasstorage(b)[1:itvl:len]
+		bias_data = b.bias_storage[1:itvl:len]
+		fullbias_data = b.fullbias_storage[1:itvl:len]
 		cv_data = cv_data[1:itvl:end]
 
 		#F = ecdf(cv_data, weights = exp.(Sg.(cv_data) + bias_data))
@@ -361,25 +352,25 @@ module Metadynamics
 	function weight_for_cdf(parameters, cv, bias, fullbias, b::BiasPotential)
 		cv_vals = b.cv_vals
 		inorm = parametric_norm(parameters, fullbias, cv_vals)
-		weight = inorm * exp( parametricFES(parameters, cv) + bias )
+		weight = inorm * exp(parametricFES(parameters, cv) + bias)
 		return weight
 	end
 	
 	function parametric_norm(parameters, old_bias, cv_vals)
-		normA = zeros(nthreads() * 8)
+		normA = 0.0
 		i = 0
 
-		@batch for cv in cv_vals
+		for cv in cv_vals
 			i += 1
-			normA[threadid() * 8] += exp(-parametricFES(parameters, cv) - old_bias[i])
+			normA += exp(-parametricFES(parameters, cv) - old_bias[i])
 			#normA += exp( -parametricFES(parameters, cv) -
 			#	parametricBias(old_bias, cv) )
 		end
 
-		return sum(normA)
+		return normA
 	end
 
-	function wantedCDF(cv::Float64, cvmin, cvmax)
+	function wantedCDF(cv, cvmin, cvmax)
 		return (cv - cvmin) / (cvmax - cvmin)
 	end
 	
@@ -398,13 +389,13 @@ module Metadynamics
 	end
 
 	function return_potential(b::BiasPotential, cv)
-		cvmin, cvmax = get_CVlims(b)
+		cvmin, cvmax = b.CVlims
 
 		if cvmin <= cv < cvmax
 			grid_index = index(b, cv)
 			return b[grid_index]
 		else
-			penalty = b.k * (0.1 + min((cv-cvmin)^2, (cv-cvmax)^2))
+			penalty = b.k * (0.1 + min((cv - cvmin)^2, (cv - cvmax)^2))
 			return penalty
 		end
 	end

@@ -9,14 +9,14 @@ function (D::NaiveDiracOperator)(U::Gaugefield)
     BC_x, BC_t = D.BC
 
     len = NX * NT * d
-    expiU = cis.(U.U)
+    expiU = cis(U)
 
     eye2 = SMatrix{2,2,ComplexF64,4}([
         1 0
         0 1
     ])
 
-    D = zeros(ComplexF64, len, len)
+    Dnaive = zeros(ComplexF64, len, len)
 
     for nx in 1:NX
         for nt in 1:NT
@@ -35,15 +35,15 @@ function (D::NaiveDiracOperator)(U::Gaugefield)
             npt = flat_index(NX, nx, mod1(nt + 1, NT))
             nmt = flat_index(NX, nx, nt_min)
             
-            view(D, n:(n+1), n:(n+1)) .+= mass * eye2
-            view(D, n:(n+1), npx:(npx+1)) .-= 0.5 * γ1 * expiU[nx,nt,1] * BC_xp
-            view(D, n:(n+1), nmx:(nmx+1)) .-= 0.5 * γ1 * conj(expiU[nx_min,nt,1]) * BC_xm
-            view(D, n:(n+1), npt:(npt+1)) .-= 0.5 * γ2 * expiU[nx,nt,2] * BC_tp
-            view(D, n:(n+1), nmt:(nmt+1)) .-= 0.5 * γ2 * conj(expiU[nx,nt_min,2]) * BC_tm
+            view(Dnaive, n:(n+1), n:(n+1)) .+= mass * eye2
+            view(Dnaive, n:(n+1), npx:(npx+1)) .-= 0.5 * γ1 * expiU[nx,nt,1] * BC_xp
+            view(Dnaive, n:(n+1), nmx:(nmx+1)) .-= 0.5 * γ1 * conj(expiU[nx_min,nt,1]) * BC_xm
+            view(Dnaive, n:(n+1), npt:(npt+1)) .-= 0.5 * γ2 * expiU[nx,nt,2] * BC_tp
+            view(Dnaive, n:(n+1), nmt:(nmt+1)) .-= 0.5 * γ2 * conj(expiU[nx,nt_min,2]) * BC_tm
         end
     end
 
-    return D
+    return Dnaive
 end
 
 
