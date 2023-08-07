@@ -4,7 +4,7 @@ struct StaggeredDiracOperator <: AbstractDiracOperator
 end
 
 function (D::StaggeredDiracOperator)(U::Gaugefield)
-    NX, NT, _ = size(U)
+    NX, NT = size(U)
     mass = D.mass
     BC_x, BC_t = D.BC
 

@@ -4,21 +4,20 @@ module Mainrun
     using DelimitedFiles
     using InteractiveUtils
 
-    import ..DiracOperatorModule: dirac_operator
-    import ..Gaugefields: Gaugefield, recalc_Sg!, recalc_CV!
-    import ..MetroUpdate: adjusted_ϵ, sweep!, sweep_meta!
-    import ..InstantonUpdate: instanton!, instanton_update!
+    import ..DiracOperators: dirac_operator
+    import ..Gaugefields: Gaugefield, random_gaugefield!, recalc_Sg!, recalc_CV!
+    import ..Updates: adjusted_ϵ, sweep!, sweep_meta!
+    import ..Updates: instanton!, instanton_update!, tempering_swap!
     import ..Metadynamics: BiasPotential, update_bias!, write_to_file!
     import ..Measurements: calc_weights, MeasurementSet, measurements
-    import ..System_parameters: Params, ParamSet, parameterloading
-    import ..System_parameters: physical, meta, param_meta, sim, mc, dirac, meas, system
-    import ..Tempering: tempering_swap!
-    import ..Verbose_print: println_verbose, print2file, Verbose_
+    import ..Parameters: ParameterSet, ParamSet, parameterloading
+    import ..Parameters: physical, meta, param_meta, update, dirac, meas, system
+    import ..VerbosePrint: println_verbose, print2file, Verbose_
 
     function run_sim(filenamein::String)
         filename = filenamein
         include(abspath(filename))
-        params_set = ParamSet(physical, meta, param_meta, sim, mc, dirac, meas, system)
+        params_set = ParamSet(physical, meta, param_meta, update, dirac, meas, system)
         run_sim(params_set)
         return nothing
     end
@@ -31,11 +30,11 @@ module Mainrun
                 fields = Vector{Gaugefield}(undef, 0)
                 biases = Vector{BiasPotential}(undef, 0)
 
-                for i in 1:params.Ninstances
+                for _ in 1:params.numinstances
                     push!(fields, Gaugefield(params))
                 end
 
-                for i in 1:params.Ninstances
+                for i in 1:params.numinstances
                     push!(
                         biases,
                         BiasPotential(params, instance = i - 1 + params.no_zero_instance),
@@ -56,7 +55,7 @@ module Mainrun
         return nothing
     end
 
-    function run_sim!(field::Gaugefield, params::Params)
+    function run_sim!(field::Gaugefield, params::ParameterSet)
         verbose = Verbose_(params.logfile)
         println_verbose(verbose, "# ", pwd())
         println_verbose(verbose, "# ", Dates.now())
@@ -71,36 +70,32 @@ module Mainrun
         )
 
         ϵ = params.ϵ_metro
-        multi_hit = params.multi_hit
+        multi_hit = params.metro_multi_hit
         metro_target_acc = params.metro_target_acc
         metro_norm = 1 / (field.NV * 2 * multi_hit)
         rng = params.randomseeds[1]
 
         if params.initial == "hot"
-            field.U = rand(size(field.U) .- 0.5) * 2 * 2π
-            recalc_Sg!(field)
-            recalc_CV!(field)
-        end 
+            random_gaugefield!(field, rng)
+        end
 
-        for therm in 1:params.Ntherm
+        for _ in 1:params.Ntherm
             tmp = sweep!(field, rng, ϵ, multi_hit)
             ϵ = adjusted_ϵ(ϵ, tmp, metro_norm, metro_target_acc)
         end
-        
+
         numaccepts = 0
         numaccepts_instanton = 0
 
         for itrj in 1:params.Nsweeps
-            tmp = sweep!(field, rng, ϵ, multi_hit)
+            numaccepts += sweep!(field, rng, ϵ, multi_hit)
 
             if params.instanton_enabled
                 Q = ifelse(rand(rng) < 0.5, 1, -1)
-                tmp_instanton = instanton_update!(field, Q, rng)
-                numaccepts_instanton += tmp_instanton
+                numaccepts_instanton += instanton_update!(field, Q, rng)
             end
 
             ϵ = adjusted_ϵ(ϵ, tmp, metro_norm, metro_target_acc)
-            numaccepts += tmp
 
             if params.veryverbose
                 println_verbose(
@@ -125,7 +120,7 @@ module Mainrun
             "%"
         )
 
-        if params.instanton_enabled 
+        if params.instanton_enabled
             println_verbose(
                 verbose,
                 "Instanton acceptance rate: ",
@@ -141,7 +136,7 @@ module Mainrun
 
     #=====================================================================================#
 
-    function run_sim!(field::Gaugefield, bias::BiasPotential, params::Params)
+    function run_sim!(field::Gaugefield, bias::BiasPotential, params::ParameterSet)
         verbose = Verbose_(params.logfile)
         println_verbose(verbose, "# ", pwd())
         println_verbose(verbose, "# ", Dates.now())
@@ -156,29 +151,26 @@ module Mainrun
         )
 
         ϵ = params.ϵ_metro
-        multi_hit = params.multi_hit
+        multi_hit = params.metro_multi_hit
         metro_target_acc = params.metro_target_acc
         metro_norm = 1 / (field.NV * 2 * multi_hit)
         rng = params.randomseeds[1]
 
         if params.initial == "hot"
-            field.U = rand(size(field.U) .- 0.5) * 2 * 2π
-            recalc_Sg!(field)
-            recalc_CV!(field)
-        end 
+            random_gaugefield!(field, rng)
+        end
 
-        for itrj in 1:params.Ntherm
+        for _ in 1:params.Ntherm
             tmp = sweep!(field, rng, ϵ, multi_hit)
             ϵ = adjusted_ϵ(ϵ, tmp, metro_norm, metro_target_acc)
         end
-        
+
         numaccepts = 0
         bias_mean = deepcopy(bias.values)
 
         for itrj in 1:params.Nsweeps
-            tmp = sweep_meta!(field, bias, rng, ϵ, multi_hit)
+            numaccepts += sweep_meta!(field, bias, rng, ϵ, multi_hit)
             ϵ = adjusted_ϵ(ϵ, tmp, metro_norm, metro_target_acc)
-            numaccepts += tmp
             update_bias!(bias, field.CV, itrj=itrj)
 
             if params.veryverbose
@@ -230,13 +222,13 @@ module Mainrun
     end
 
     #=====================================================================================#
-    
+
     function run_tempered_sim!(
         fields::Vector{Gaugefield},
         biases::Vector{BiasPotential},
-        params::Params
+        params::ParameterSet
     )
-        Ninstances = params.Ninstances
+        numinstances = params.numinstances
         verbose = Verbose_(params.logfile)
         println_verbose(verbose, "# ", pwd())
         println_verbose(verbose, "# ", Dates.now())
@@ -246,13 +238,13 @@ module Mainrun
             "# Parallel tempered run with ",
             Int(!params.no_zero_instance),
             " regular instance and ",
-            Ninstances - !params.no_zero_instance,
+            numinstances - !params.no_zero_instance,
             " MetaD instances"
         )
 
         meassets = Vector{MeasurementSet}(undef, 0)
 
-        for i in 1:Ninstances
+        for i in 1:numinstances
             push!(
                 meassets,
                 MeasurementSet(params.measure_dir, meas_calls = params.meas_calls,
@@ -261,54 +253,49 @@ module Mainrun
         end
 
         ϵ = params.ϵ_metro
-        multi_hit = params.multi_hit
+        multi_hit = params.metro_multi_hit
         metro_target_acc = params.metro_target_acc
         metro_norm = 1 / (fields[1].NV * 2 * multi_hit)
         rng = params.randomseeds
 
         if params.initial == "hot"
-            for i in 1:Ninstances
-            fields[i].U = rand(size(fields[i].U) .- 0.5) * 2 * 2π
-            recalc_Sg!(fields[i])
-            recalc_CV!(fields[i])
+            for i in 1:numinstances
+                random_gaugefield!(fields[i], rng[i])
             end
-        end 
+        end
 
-        tmp = zeros(Int64, Ninstances)
-
-        for itrj in 1:params.Ntherm
-            @threads for i in 1:Ninstances
-                tmp[i] = sweep!(fields[i], rng[i], ϵ, multi_hit)
-                ϵ = adjusted_ϵ(ϵ, tmp[i], metro_norm, metro_target_acc)
+        for _ in 1:params.Ntherm
+            @threads for i in 1:numinstances
+                numaccepts[i] += sweep!(fields[i], rng[i], ϵ, multi_hit)
+                ϵ = adjusted_ϵ(ϵ, numaccepts[i], metro_norm, metro_target_acc)
             end
         end
 
         if params.starting_Q !== nothing
-            @threads for i in 1:Ninstances
+            @threads for i in 1:numinstances
                 instanton!(fields[i], params.starting_Q[i], rng[i], metro_test = false)
             end
         end
 
-        numaccepts = zeros(Int64, Ninstances)
-        num_swaps = zeros(Int64, Ninstances - 1)
+        numaccepts = zeros(Int64, numinstances)
+        num_swaps = zeros(Int64, numinstances - 1)
         bias_means = []
 
-        for i in 1:Ninstances
+        for i in 1:numinstances
             push!(bias_means, deepcopy(biases[i].values))
         end
 
         for itrj in 1:params.Nsweeps
 
-            @threads for i in 1:Ninstances
-                tmp[i] = sweep_meta!(fields[i], biases[i], rng[i], ϵ, multi_hit)
-                ϵ = adjusted_ϵ(ϵ, tmp[i], metro_norm, metro_target_acc)
-                numaccepts[i] += tmp[i]
+            @threads for i in 1:numinstances
+                numaccepts[i] += sweep_meta!(fields[i], biases[i], rng[i], ϵ, multi_hit)
+                ϵ = adjusted_ϵ(ϵ, numaccepts[i], metro_norm, metro_target_acc)
                 bias_means[i] += biases[i].values
                 update_bias!(biases[i], fields[i].CV)
             end
 
             if itrj%params.swap_every == 0
-                for i in Ninstances-1:-1:1
+                for i in numinstances-1:-1:1
                     accept_swap = tempering_swap!(
                         fields[i],
                         fields[i+1],
@@ -330,14 +317,14 @@ module Mainrun
                 end
             end
 
-            @threads for i in 1:Ninstances
+            @threads for i in 1:numinstances
                 measurements(itrj, fields[i], meassets[i])
             end
         end
 
         println_verbose(verbose, "# Final ϵ_metro: ", ϵ)
 
-        for i in 1:Ninstances
+        for i in 1:numinstances
             println_verbose(
                 verbose,
                 "# Acceptance rate ",
@@ -346,7 +333,7 @@ module Mainrun
                 100 * numaccepts[i] / params.Nsweeps / fields[i].NV / 2 / multi_hit,
                 "%"
             )
-            if i < Ninstances
+            if i < numinstances
                 println_verbose(
                     verbose,
                     "# Swap Acceptance rate ",
@@ -360,25 +347,19 @@ module Mainrun
             end
         end
 
-        for i in 1+!params.no_zero_instance:Ninstances
-            println_verbose(
-                verbose,
-                "# Exceeded Count ",
-                i - 1,
-                ": ",
-                biases[i].exceeded_count
-            )
+        for i in 1+!params.no_zero_instance:numinstances
+            println_verbose(verbose, "# Exceeded Count $(i-1): ", biases[i].exceeded_count)
             q_vals = readdlm(
-                pwd() * "/" * params.measure_dir * "/Meta_charge_$(i - !params.no_zero_instance).txt",
+                pwd()*"/$(params.measure_dir)/Meta_charge$(i-!params.no_zero_instance).txt",
                 Float64,
-                comments = true
+                comments = true,
             )
             weights = calc_weights(q_vals[:,2], biases[i])
 
             open(params.weightfiles[i - !params.no_zero_instance], "w") do io
                 writedlm(io, [q_vals[:,1] weights])
             end
-            
+
             write_to_file!(biases[i])
             effective_samplesize = round(Int, sum(weights)^2 / sum(weights.^2))
             println_verbose(verbose, "# Effective sample size $i: ", effective_samplesize)

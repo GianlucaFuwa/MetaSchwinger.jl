@@ -2,14 +2,13 @@ module Metadynamics
 	using DelimitedFiles
 	using ForwardDiff
 	using StatsBase
-	using Optimization 
+	using Optimization
 	using OptimizationOptimJL
 	using Zygote
 
-	import ..Gaugefields: Gaugefield
-	import ..System_parameters: Params
-	import ..Verbose_print: Verbose, Verbose_, println_verbose
-	
+	import ..Parameters: ParameterSet
+	import ..VerbosePrint: Verbose, Verbose_, println_verbose
+
 	struct BiasPotential{O}
 		is_static::Bool
 		symmetric::Bool
@@ -23,7 +22,7 @@ module Metadynamics
 		current_parameters::Union{Nothing, Vector{Float64}}
 		lower_bounds::Union{Nothing, Vector{Float64}}
 		upper_bounds::Union{Nothing, Vector{Float64}}
-		batchsize::Union{Nothing, Int64} 
+		batchsize::Union{Nothing, Int64}
 		cv_storage::Union{Nothing, Vector{Float64}}
 		bias_storage::Union{Nothing, Vector{Float64}}
 		fullbias_storage::Union{Nothing, Vector{Vector{Float64}}}
@@ -39,8 +38,8 @@ module Metadynamics
 		exceeded_count::Int64
 		fp::Union{Nothing, IOStream}
 		KS_fp::Union{Nothing, Verbose}
-		
-		function BiasPotential(p::Params; instance::Int64 = 1)
+
+		function BiasPotential(p::ParameterSet; instance::Int64 = 1)
 			is_static = instance==0 ? true : p.is_static[instance]
 			symmetric = p.symmetric
 
@@ -89,26 +88,26 @@ module Metadynamics
 
 			if p.parametric == true
 				KS_fp = Verbose_(open(
-					pwd() * p.measure_dir * "/" * p.testfun * "_" * p.minimizer*".txt",
+					pwd() * p.measure_dir * "/" * p.testfun * "_" * p.minimizer *".txt",
 					"w",
-				)) 
+				))
 			else
 				KS_fp = nothing
 			end
 
 			return new{typeof(minimizer)}(
-			is_static, symmetric,
-			CVlims, bin_width, w, k,
-			parametric, current_parameters, lower_bounds, upper_bounds, batchsize,
-			cv_storage, bias_storage, fullbias_storage, testfun, minimizer,
-			well_tempered, ΔT,
-			values, cv_vals,
-			exceeded_count, fp, KS_fp,
+				is_static, symmetric,
+				CVlims, bin_width, w, k,
+				parametric, current_parameters, lower_bounds, upper_bounds, batchsize,
+				cv_storage, bias_storage, fullbias_storage, testfun, minimizer,
+				well_tempered, ΔT,
+				values, cv_vals,
+				exceeded_count, fp, KS_fp,
 			)
-		end	
+		end
 	end
 
-	function potential_from_file(p::Params, usebias::Union{Nothing,String})
+	function potential_from_file(p::ParameterSet, usebias::Union{Nothing,String})
 		if usebias === nothing
 			len = 1 + round(
 				Int,
@@ -172,11 +171,11 @@ module Metadynamics
 		for i in eachindex(b.values)
 			b.values[i] = 0
 		end
-		
+
 		return nothing
 	end
 
-	function update_bias!(b::BiasPotential, cv; itrj = nothing)
+	function update_bias!(b::BiasPotential, cv; itrj = 1)
 		if b.is_static
 		elseif b.parametric == false
 			update_bias_regular!(b, cv)
@@ -190,7 +189,7 @@ module Metadynamics
 		end
 
 		return nothing
-	end 
+	end
 
 	function update_bias_regular!(b::BiasPotential, cv)
 		grid_index = index(b, cv)
@@ -199,7 +198,7 @@ module Metadynamics
 			for (idx, current_bin) in enumerate(b.cv_vals)
 				fac = b.well_tempered ? exp(-b[idx] / b.ΔT) : 1
 				b[idx] += fac * b.w * exp(-0.5(cv - current_bin)^2 / b.bin_width^2)
-			end	
+			end
 		end
 
 		return nothing
@@ -303,7 +302,7 @@ module Metadynamics
 		cvmax = ceil(maximum(sorteddata))
 
 		S = 0.0
-		
+
 		for i in 1:batchsize - 1
 			p_i = F(sorteddata[i])
         	u_i = wantedCDF(sorteddata[i], cvmin, cvmax)
@@ -355,7 +354,7 @@ module Metadynamics
 		weight = inorm * exp(parametricFES(parameters, cv) + bias)
 		return weight
 	end
-	
+
 	function parametric_norm(parameters, old_bias, cv_vals)
 		normA = 0.0
 		i = 0
@@ -373,7 +372,7 @@ module Metadynamics
 	function wantedCDF(cv, cvmin, cvmax)
 		return (cv - cvmin) / (cvmax - cvmin)
 	end
-	
+
 	function parametric_to_bias!(b::BiasPotential)
 		parameters = b.current_parameters
 
@@ -385,10 +384,10 @@ module Metadynamics
 	end
 
 	function (b::BiasPotential)(cv::Float64)
-		return return_potential(b, cv)
+		return return_bias(b, cv)
 	end
 
-	function return_potential(b::BiasPotential, cv)
+	function return_bias(b::BiasPotential, cv)
 		cvmin, cvmax = b.CVlims
 
 		if cvmin <= cv < cvmax
@@ -401,5 +400,3 @@ module Metadynamics
 	end
 
 end
-
-

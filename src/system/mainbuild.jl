@@ -4,21 +4,20 @@ module Mainbuild
     using DelimitedFiles
     using InteractiveUtils
     
-    import ..DiracOperatorModule: dirac_operator
+    import ..DiracOperators: dirac_operator
     import ..Gaugefields: Gaugefield, recalc_Sg!, recalc_CV!
-    import ..MetroUpdate: adjusted_ϵ, sweep!, sweep_meta!
-    import ..InstantonUpdate: instanton!, instanton_update!
+    import ..Updates: adjusted_ϵ, sweep!, sweep_meta!
+    import ..Updates: instanton!, instanton_update!, tempering_swap!
     import ..Metadynamics: BiasPotential, clear!, parametric_to_bias!, update_bias!, write_to_file!
     import ..Measurements: calc_weights, MeasurementSet, measurements
-    import ..System_parameters: parameterloading, Params, ParamSet
-    import ..System_parameters: physical, meta, param_meta, sim, mc, dirac, meas, system
-    import ..Tempering: tempering_swap!
-    import ..Verbose_print: print2file, println_verbose, Verbose_
+    import ..Parameters: parameterloading, ParameterSet, ParamSet
+    import ..Parameters: physical, meta, param_meta, update, dirac, meas, system
+    import ..VerbosePrint: print2file, println_verbose, Verbose_
 
     function run_build(filenamein::String)
         filename = filenamein
         include(abspath(filename))
-        params_set = ParamSet(physical, meta, param_meta, sim, mc, dirac, meas, system)
+        params_set = ParamSet(physical, meta, param_meta, update, dirac, meas, system)
         run_build(params_set)
         return nothing
     end
@@ -30,11 +29,11 @@ module Mainbuild
             fields = Vector{Gaugefield}(undef, 0)
             biases = Vector{BiasPotential}(undef, 0)
 
-            for i in 1:params.Ninstances
+            for _ in 1:params.numinstances
                 push!(fields, Gaugefield(params))
             end
 
-            for i in 1:params.Ninstances
+            for _ in 1:params.numinstances
                 push!(
                     biases,
                     BiasPotential(params, instance = 1),
@@ -52,7 +51,7 @@ module Mainbuild
         return nothing
     end
 
-    function run_build!(field::Gaugefield, bias::BiasPotential, params::Params)
+    function run_build!(field::Gaugefield, bias::BiasPotential, params::ParameterSet)
         verbose = Verbose_(params.logfile)
         println_verbose(verbose, "# ", pwd())
         println_verbose(verbose, "# ", Dates.now())
@@ -60,7 +59,7 @@ module Mainbuild
 
         measset = MeasurementSet(params.measure_dir, meas_calls = params.meas_calls)
         ϵ = params.ϵ_metro
-        multi_hit = params.multi_hit
+        multi_hit = params.metro_multi_hit
         metro_target_acc = params.metro_target_acc
         metro_norm = 1 / (field.NV * 2 * multi_hit)
         rng = params.randomseeds[1]
@@ -72,7 +71,7 @@ module Mainbuild
             recalc_CV!(field)
         end 
 
-        for therm in 1:params.Ntherm
+        for _ in 1:params.Ntherm
             tmp = sweep!(field, rng, ϵ, multi_hit)
             ϵ = adjusted_ϵ(ϵ, tmp, metro_norm, metro_target_acc)
         end
@@ -125,9 +124,9 @@ module Mainbuild
         fields::Vector{Gaugefield},
         biases::Vector{BiasPotential},
         cum_bias::BiasPotential,
-        params::Params,
+        params::ParameterSet,
     )
-        Ninstances = params.Ninstances
+        numinstances = params.numinstances
         verbose = Verbose_(params.logfile)
         println_verbose(verbose, "# ", pwd())
         println_verbose(verbose, "# ", Dates.now())
@@ -135,13 +134,13 @@ module Mainbuild
         println_verbose(
             verbose,
             "Parallel tempered run with ",
-            Ninstances,
+            numinstances,
             " MetaD instances",
         )
 
         meassets = Vector{MeasurementSet}(undef, 0)
 
-        for i in 1:Ninstances
+        for i in 1:numinstances
             push!(
                 meassets,
                 MeasurementSet(params.measure_dir, meas_calls = params.meas_calls,
@@ -150,45 +149,45 @@ module Mainbuild
         end
 
         ϵ = params.ϵ_metro
-        multi_hit = params.multi_hit
+        multi_hit = params.metro_multi_hit
         metro_target_acc = params.metro_target_acc
         metro_norm = 1 / (fields[1].NV * 2 * multi_hit)
         rng = params.randomseeds
 
         if params.initial == "hot"
-            for i in 1:Ninstances
+            for i in 1:numinstances
             fields[i].U = rand(size(fields[i].U) .- 0.5) * 2 * 2π
             recalc_Sg!(fields[i])
             recalc_CV!(fields[i])
             end
         end 
 
-        tmp = zeros(Int64, Ninstances)
+        tmp = zeros(Int64, numinstances)
 
-        for itrj in 1:params.Ntherm
-            @threads for i in 1:Ninstances
+        for _ in 1:params.Ntherm
+            @threads for i in 1:numinstances
                 tmp[i] = sweep!(fields[i], rng[i], ϵ, multi_hit)
                 ϵ = adjusted_ϵ(ϵ, tmp[i], metro_norm, metro_target_acc)
             end
         end
 
         if params.starting_Q !== nothing
-            @threads for i in 1:Ninstances
+            @threads for i in 1:numinstances
                 instanton!(fields[i], params.starting_Q[i], rng[i], metro_test = false)
             end
         end
 
-        numaccepts = zeros(Int64, Ninstances)
+        numaccepts = zeros(Int64, numinstances)
 
         for itrj in 1:params.Nsweeps
-            @threads for i in 1:Ninstances
+            @threads for i in 1:numinstances
                 tmp[i] = sweep_meta!(fields[i], cum_bias, rng[i], ϵ, multi_hit)
                 ϵ = adjusted_ϵ(ϵ, tmp[i], metro_norm, metro_target_acc)
                 numaccepts[i] += tmp[i]
                 update_bias!(biases[i], fields[i].CV)
             end
 
-            for i in 1:Ninstances
+            for i in 1:numinstances
                 cum_bias.values .+= biases[i].values 
                 clear!(biases[i])
             end
@@ -199,14 +198,14 @@ module Mainbuild
                 end
             end 
 
-            @threads for i in 1:Ninstances
+            @threads for i in 1:numinstances
                 measurements(itrj, fields[i], meassets[i])
             end
         end
 
         println_verbose(verbose, "Final ϵ_metro: ", ϵ)
 
-        for i in 1:Ninstances
+        for i in 1:numinstances
             println_verbose(
                 verbose,
                 "Acceptance rate ",

@@ -1,29 +1,15 @@
 module Observables
     using Arpack
 
-    import ..Gaugefields: circshift, Gaugefield, plaquette
-    import ..Gaugefields: wilson_loop
-
-    function meta_charge(g::Gaugefield)
-		NX, NT, _ = size(g)
-		q = 0.0
-
-		for it in 1:NT
-			for ix in 1:NX
-			    q += sin(plaquette(g, ix, it))
-			end
-		end
-
-		return q / 2π
-	end
+    import ..Gaugefields: Gaugefield, plaquette, wilson_loop
 
     function topological_charge(g::Gaugefield)
-        NX, NT, _ = size(g)
+        NX, NT = size(g)
         q = 0.0
 
         for it in 1:NT
             for ix in 1:NX
-                @inbounds q += imag(log(cis(plaquette(g, ix, it))))
+                q += imag(log(cis(plaquette(g, ix, it))))
             end
         end
 
@@ -31,7 +17,7 @@ module Observables
     end
 
     function wilson_loop_all(g::Gaugefield, LT)
-        NX, _, _ = size(g)
+        NX, _ = size(g)
         wils = zeros(ComplexF64, NX)
 
         for LX in 1:NX
@@ -42,7 +28,7 @@ module Observables
     end
 
     function poly_loop_avg(g::Gaugefield)
-        NX, _, _ = size(g)
+        NX, _ = size(g)
         poly_re = 0.0
         poly_im = 0.0
 
@@ -56,18 +42,18 @@ module Observables
     end
 
     function poly_loop(g::Gaugefield, ix)
-		_, NT, _ = size(g)
+		_, NT = size(g)
 		poly = 0.0
 
 		for it in 1:NT
 			poly += g[ix,it,2]
 		end
-		
+
 		return cos(poly), sin(poly)
-	end 
+	end
 
 	function wilson_loop_avg(g::Gaugefield, LX, LT; tempgauge = false)
-		NX, NT, _ = size(g)
+		NX, NT = size(g)
 		wils = zeros(NX, NT)
 		x_up_side = zeros(NX, NT)
 		t_up_side = zeros(NX, NT)
@@ -89,7 +75,7 @@ module Observables
 				x_up_side += circshift(g, (i,0), 1)
 				x_down_side -= circshift(g, (i,LT), 1)
 			end
-			
+
 			for i in 0:LT-1
 				t_up_side += circshift(g, (LX,i), 1)
 				t_down_side -= circshift(g, (0,i), 1)
