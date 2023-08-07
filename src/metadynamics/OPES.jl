@@ -251,13 +251,14 @@ module OPESModule
 		return nothing
 	end
 
-	@inline function get_mergeable_kernel(s, kernels)
+	function get_mergeable_kernel(s, kernels)
 		d_min = Inf
 		i_min = 0
 		centers = view(kernels.center, :)
+		σs = view(kernels.σ, :)
 
 		@turbo for i in eachindex(kernels)
-			d = abs(centers[i] - s)
+			d = abs(centers[i] - s) / σs[i]
 			ismin = d < d_min
 			d_min = ifelse(ismin, d, d_min)
 			i_min = ifelse(ismin, i, i_min)
