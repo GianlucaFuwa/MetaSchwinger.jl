@@ -16,6 +16,5 @@ julia src/build.jl templates/build_parameters.jl
 ```
 julia -t 2 src/run.jl templates/sim_parameters.jl
 ```
-**! Make sure to specify the number of CPU-threads to be equal to or more than the amount of instances when using Parallel Tempering!** 
 
 Measurements are outputted as .txt files in the chosen directories; you can use them to make plots as you wish.
