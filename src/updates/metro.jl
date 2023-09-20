@@ -1,44 +1,29 @@
-function metropolis!(field::Gaugefield, ix, it, μ, rng, ϵ, multi_hit)
-	accept = 0
+mutable struct MetroUpdate <: AbstractUpdate
+    ϵ::Float64
+    multi_hit::Int64
+    target_acc::Float64
+    norm::Float64
 
-	for _ in 1:multi_hit
-		dU = randn(rng) * ϵ
-		ΔSg = local_action_diff(field, ix, it, μ, dU)
-		ΔCV = local_metacharge_diff(field, ix, it, μ, dU)
-
-		if rand(rng) ≤ exp(-ΔSg)
-			field[ix,it,μ] += dU
-			field.Sg += ΔSg
-			field.CV += ΔCV
-			accept += 1
-		end
-	end
-
-	return accept
+    function MetroUpdate(U, ϵ, multi_hit, target_acc)
+        norm = 1 / (U.NV * 2 * multi_hit)
+        return new(ϵ, multi_hit, target_acc, norm)
+    end
 end
 
-function metropolis_meta!(field::Gaugefield, bias::BiasPotential, ix, it, μ, rng, ϵ, multi_hit)
-	accept = 0
+function update!(updatemethod::MetroUpdate, U, rng; bias=nothing, kwargs...)
+    ϵ = updatemethod.ϵ
+    multi_hit = updatemethod.multi_hit
+    target_acc = updatemethod.target_acc
+    norm = updatemethod.norm
 
-	for _ in 1:multi_hit
-		dU = randn(rng) * ϵ
-		ΔSg = local_action_diff(field, ix, it, μ, dU)
-		ΔCV = local_metacharge_diff(field, ix, it, μ, dU)
+    if bias === nothing
+        numaccepts = sweep!(U, rng, ϵ, multi_hit)
+    else
+        numaccepts = sweep_meta!(U, bias, rng, ϵ, multi_hit)
+    end
 
-		oldCV = field.CV
-		newCV = field.CV + ΔCV
-
-		ΔV = bias(newCV) - bias(oldCV)
-
-		if rand(rng) ≤ exp(-ΔSg - ΔV)
-			field[ix,it,μ] += dU
-			field.Sg += ΔSg
-			field.CV += ΔCV
-			accept += 1
-		end
-	end
-
-	return accept
+    updatemethod.ϵ = adjusted_ϵ(ϵ, numaccepts, norm, target_acc)
+    return numaccepts*norm
 end
 
 function sweep!(field::Gaugefield, rng, ϵ, multi_hit)
@@ -64,7 +49,7 @@ function sweep!(field::Gaugefield, rng, ϵ, multi_hit)
 	return numaccepts
 end
 
-function sweep_meta!(field::Gaugefield, bias::BiasPotential, rng, ϵ, multi_hit)
+function sweep_meta!(field::Gaugefield, bias, rng, ϵ, multi_hit)
 	NX, NT = size(field)
 	numaccepts = 0
 
@@ -87,8 +72,51 @@ function sweep_meta!(field::Gaugefield, bias::BiasPotential, rng, ϵ, multi_hit)
 	return numaccepts
 end
 
+function metropolis!(field::Gaugefield, ix, it, μ, rng, ϵ, multi_hit)
+	accept = 0
+
+	for _ in 1:multi_hit
+		dU = randn(rng) * ϵ
+		ΔSg = local_action_diff(field, ix, it, μ, dU)
+		ΔCV = local_metacharge_diff(field, ix, it, μ, dU)
+
+		if rand(rng) ≤ exp(-ΔSg)
+			field[μ,ix,it] += dU
+			field.Sg += ΔSg
+			field.CV += ΔCV
+			accept += 1
+		end
+	end
+
+	return accept
+end
+
+function metropolis_meta!(field::Gaugefield, bias, ix, it, μ, rng, ϵ, multi_hit)
+	accept = 0
+
+	for _ in 1:multi_hit
+		dU = randn(rng) * ϵ
+		ΔSg = local_action_diff(field, ix, it, μ, dU)
+		ΔCV = local_metacharge_diff(field, ix, it, μ, dU)
+
+		oldCV = field.CV
+		newCV = field.CV + ΔCV
+
+		ΔV = bias(newCV) - bias(oldCV)
+
+		if rand(rng) ≤ exp(-ΔSg - ΔV)
+			field[μ,ix,it] += dU
+			field.Sg += ΔSg
+			field.CV += ΔCV
+			accept += 1
+		end
+	end
+
+	return accept
+end
+
 function adjusted_ϵ(ϵ, numaccepts, metro_norm, metro_target_acc)
-	return 	ϵ + (numaccepts * metro_norm - metro_target_acc) * 0.2
+	return 	mod(ϵ + (numaccepts*metro_norm - metro_target_acc) * 0.2, 2π)
 end
 
 function local_action_diff(g::Gaugefield, ix, it, μ, dU)
@@ -99,15 +127,15 @@ function local_action_diff(g::Gaugefield, ix, it, μ, dU)
 	ix_plu = mod1(ix + 1, NX)
 
 	if μ == 1
-		a = g[ix,it    ,1]+dU + g[ix_plu,it    ,2] - g[ix,it_plu,1]    - g[ix,it    ,2]
-		b = g[ix,it_min,1]    + g[ix_plu,it_min,2] - g[ix,it    ,1]-dU - g[ix,it_min,2]
-		c = g[ix,it    ,1]    + g[ix_plu,it    ,2] - g[ix,it_plu,1]    - g[ix,it    ,2]
-		d = g[ix,it_min,1]    + g[ix_plu,it_min,2] - g[ix,it    ,1]    - g[ix,it_min,2]
+		a = g[1,ix,it    ]+dU + g[2,ix_plu,it    ] - g[1,ix,it_plu]    - g[2,ix,it    ]
+		b = g[1,ix,it_min]    + g[2,ix_plu,it_min] - g[1,ix,it    ]-dU - g[2,ix,it_min]
+		c = g[1,ix,it    ]    + g[2,ix_plu,it    ] - g[1,ix,it_plu]    - g[2,ix,it    ]
+		d = g[1,ix,it_min]    + g[2,ix_plu,it_min] - g[1,ix,it    ]    - g[2,ix,it_min]
 	elseif μ == 2
-		a = g[ix_min,it,1] + g[ix    ,it,2]+dU - g[ix_min,it_plu,1] - g[ix_min,it,2]
-		b = g[ix    ,it,1] + g[ix_plu,it,2]    - g[ix    ,it_plu,1] - g[ix    ,it,2]-dU
-		c = g[ix_min,it,1] + g[ix    ,it,2]    - g[ix_min,it_plu,1] - g[ix_min,it,2]
-		d = g[ix    ,it,1] + g[ix_plu,it,2]    - g[ix    ,it_plu,1] - g[ix    ,it,2]
+		a = g[1,ix_min,it] + g[2,ix    ,it]+dU - g[1,ix_min,it_plu] - g[2,ix_min,it]
+		b = g[1,ix    ,it] + g[2,ix_plu,it]    - g[1,ix    ,it_plu] - g[2,ix    ,it]-dU
+		c = g[1,ix_min,it] + g[2,ix    ,it]    - g[1,ix_min,it_plu] - g[2,ix_min,it]
+		d = g[1,ix    ,it] + g[2,ix_plu,it]    - g[1,ix    ,it_plu] - g[2,ix    ,it]
 	end
 
 	return -g.β * (cos(a) + cos(b) - cos(c) - cos(d))
@@ -121,15 +149,15 @@ function local_metacharge_diff(g::Gaugefield, ix, it, μ, dU)
 	ix_plu = mod1(ix + 1, NX)
 
 	if μ == 1
-		a = g[ix,it    ,1]+dU + g[ix_plu,it    ,2] - g[ix,it_plu,1]    - g[ix,it    ,2]
-		b = g[ix,it_min,1]    + g[ix_plu,it_min,2] - g[ix,it    ,1]-dU - g[ix,it_min,2]
-		c = g[ix,it    ,1]    + g[ix_plu,it    ,2] - g[ix,it_plu,1]    - g[ix,it    ,2]
-		d = g[ix,it_min,1]    + g[ix_plu,it_min,2] - g[ix,it    ,1]    - g[ix,it_min,2]
+		a = g[1,ix,it    ]+dU + g[2,ix_plu,it    ] - g[1,ix,it_plu]    - g[2,ix,it    ]
+		b = g[1,ix,it_min]    + g[2,ix_plu,it_min] - g[1,ix,it    ]-dU - g[2,ix,it_min]
+		c = g[1,ix,it    ]    + g[2,ix_plu,it    ] - g[1,ix,it_plu]    - g[2,ix,it    ]
+		d = g[1,ix,it_min]    + g[2,ix_plu,it_min] - g[1,ix,it    ]    - g[2,ix,it_min]
 	elseif μ == 2
-		a = g[ix_min,it,1] + g[ix    ,it,2]+dU - g[ix_min,it_plu,1] - g[ix_min,it,2]
-		b = g[ix    ,it,1] + g[ix_plu,it,2]    - g[ix    ,it_plu,1] - g[ix    ,it,2]-dU
-		c = g[ix_min,it,1] + g[ix    ,it,2]    - g[ix_min,it_plu,1] - g[ix_min,it,2]
-		d = g[ix    ,it,1] + g[ix_plu,it,2]    - g[ix    ,it_plu,1] - g[ix    ,it,2]
+		a = g[1,ix_min,it] + g[2,ix    ,it]+dU - g[1,ix_min,it_plu] - g[2,ix_min,it]
+		b = g[1,ix    ,it] + g[2,ix_plu,it]    - g[1,ix    ,it_plu] - g[2,ix    ,it]-dU
+		c = g[1,ix_min,it] + g[2,ix    ,it]    - g[1,ix_min,it_plu] - g[2,ix_min,it]
+		d = g[1,ix    ,it] + g[2,ix_plu,it]    - g[1,ix    ,it_plu] - g[2,ix    ,it]
 	end
 
 	return 1 / 2π * (sin(a) + sin(b) - sin(c) - sin(d))

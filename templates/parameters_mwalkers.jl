@@ -2,34 +2,41 @@ using Random
 N = 32
 physical["N"] = (N, N)
 physical["β"] = N^2 / 80
-physical["Ntherm"] = 20_000
-physical["Nsweeps"] = 250_000 * 8
+physical["Ntherm"] = 10_000
+physical["Nsweeps"] = 128_000
 physical["initial"] = "cold"
-physical["starting_Q"] = [0, 1, 2, 3, 4, 5, 6, 7]
+physical["starting_Q"] = -7:1:7
 
 meta["meta_enabled"] = true
+meta["parametric"] = false
 meta["tempering_enabled"] = true
-meta["numinstances"] = 1
+meta["numinstances"] = 15
 meta["swap_every"] = nothing
 meta["no_zero_instance"] = true
-meta["parametric"] = false
 meta["symmetric"] = true
-meta["is_static"] = [false, false, false, false, false, false, false, false]
-meta["CVlims"] = (-7, 7)
-meta["bin_width"] = 1e-2
-meta["w"] = 2e-3
+meta["is_static"] = [false for _ in 1:15]
+meta["bin_width"] = 0.01
+meta["w"] = 0.002
 meta["k"] = 1000
-meta["well_tempered"] = false
-#meta["ΔT"] = 5.0
-meta["take_snapshot_every"] = 10_000 * 8
-#=
-param_meta["potential_parameters"] = [-0.25, 19.5, 1.044]
-param_meta["lower_bounds"] = [-0.26, 15.0, 1.0]
-param_meta["upper_bounds"] = [-0.245, 25.0, 1.1]
-param_meta["batchsize"] = 1000
-param_meta["testfun"] = "GADLTtest"
-param_meta["minimizer"] = "SAMIN"
-=#
+meta["CVlims"] = (-7, 7)
+
+opes["opes_enabled"] = false
+opes["barrier"] = 40
+opes["biasfactor"] = 40
+opes["stride"] = 1
+opes["sigma0"] = 0.1
+opes["σ_min"] = 1e-6
+opes["fixed_σ"] = false
+opes["d_thresh"] = 1
+opes["no_Z"] = false
+system["write_state_every"] = 1000
+
+# param_meta["potential_parameters"] = [-0.2, 20.0, 1.1]
+# param_meta["lower_bounds"] = [-0.5, 15.0, 1.0]
+# param_meta["upper_bounds"] = [-0.0, 25.0, 1.5]
+# param_meta["batchsize"] = 100
+# param_meta["testfun"] = "GADLTtest"
+# param_meta["minimizer"] = "SAMIN"
 
 update["ϵ_metro"] = 0.2
 update["metro_multi_hit"] = 1
@@ -42,28 +49,15 @@ meas["meas_calls"] = Dict[Dict{Any,Any}("methodname" => "Meta_charge", "measure_
                           #Dict{Any,Any}("methodname" => "Wilson_loop_x16", "measure_every" => 10),
                           #Dict{Any,Any}("methodname" => "Polyakov_loop", "measure_every" => 10)
                           ]
-                       
+
 system["veryverbose"] = false
-system["randomseeds"] = [
-    Random.Xoshiro(),
-    Random.Xoshiro(),
-    Random.Xoshiro(),
-    Random.Xoshiro(),
-    Random.Xoshiro(),
-    Random.Xoshiro(),
-    Random.Xoshiro(),
-    Random.Xoshiro(),
-]
+system["randomseeds"] = [Xoshiro() for _ in 1:15]
 
-system["logdir"] = "./logs/N$(physical["N"])/beta$(physical["β"])/Seminar"
-system["logfile"] = "CVlims$(meta["CVlims"])_dcv$(meta["bin_width"])_w$(meta["w"])_normal_build"
+system["logdir"] = "./logs/N$(physical["N"])/beta$(physical["β"])"
+system["logfile"] = "test_metad15"
 
-system["measure_basedir"] = "./measurements/N$(physical["N"])/beta$(physical["β"])/Seminar"
-system["measure_dir"] = "CVlims$(meta["CVlims"])_dcv$(meta["bin_width"])_w$(meta["w"])_normal_build"
+system["measure_basedir"] = "./measurements/N$(physical["N"])/beta$(physical["β"])"
+system["measure_dir"] = "test_metad15"
 
-system["savebias_dir"] = "./metapotentials/N$(physical["N"])/beta$(physical["β"])/Seminar"
-system["biasfile"] = "CVlims$(meta["CVlims"])_dcv$(meta["bin_width"])_w$(meta["w"])_normal_build"
-system["usebiases"] = [
-    nothing,
-]
-system["snapshot_dir"] = "CVlims$(meta["CVlims"])_dcv$(meta["bin_width"])_w$(meta["w"])_normal_build_snapshots"
+system["savebias_dir"] = "./metapotentials/N$(physical["N"])/beta$(physical["β"])/test_metad15"
+system["biasfile"] = "snapshot"

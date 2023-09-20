@@ -6,8 +6,8 @@ function instanton_update!(U::Gaugefield, Q, rng; metro_test = true)
 
     for it in 1:NX
         for ix in 1:NT
-            U[ix,it,1] -= Q * it * 2π / (NX * NT)
-            U[ix,it,2] += Q * ix * (it == NT) * 2π / NX
+            U[2,ix,it] -= Q * it * 2π / (NX * NT)
+            U[1,ix,it] += Q * ix * (it == NT) * 2π / NX
         end
     end
 
@@ -33,8 +33,8 @@ function instanton!(U::Gaugefield, Q, rng; metro_test = true)
 
     for it in 1:NX
         for ix in 1:NT
-            U[ix,it,1] = -Q * it * 2π / (NX * NT)
-            U[ix,it,2] = Q * ix * (it == NT) * 2π / NX
+            U[1,ix,it] = -Q * it * 2π / (NX * NT)
+            U[2,ix,it] = Q * ix * (it == NT) * 2π / NX
         end
     end
 

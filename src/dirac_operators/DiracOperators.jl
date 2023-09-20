@@ -23,10 +23,10 @@ module DiracOperators
     ])
 
     function flat_index(NX, ix, it)
-        idx = 1 + (ix - 1) * 2 + (it - 1) * NX * 2 
+        idx = 1 + (ix - 1) * 2 + (it - 1) * NX * 2
         return idx
     end
-    
+
     function δ(i, j)
         return i == j
     end
@@ -37,11 +37,13 @@ module DiracOperators
     include("wilson_dirac.jl")
 
     function dirac_operator(p::ParameterSet)
-        if p.operator === nothing 
+        if p.operator === nothing
             return nothing
         elseif p.operator == "Naive"
+            println(">> Kind of Dirac operator = Naive")
             return NaiveDiracOperator(p.N, p.mass, p.BC)
         elseif p.operator == "Wilson"
+            println(">> Kind of Dirac operator = Wilson")
             return WilsonDiracOperator(p.N, p.mass, p.BC)
         else
             error("Dirac operator ", p.operator, " not supported")
@@ -78,5 +80,5 @@ module DiracOperators
         end
         return nothing
     end
-    
+
 end

@@ -6,7 +6,7 @@ module Measurements
 
     import ..DiracOperators: AbstractDiracOperator
     import ..Gaugefields: Gaugefield, plaquette_sum
-    import ..Metadynamics: BiasPotential
+    import ..BiasModule: Metadynamics
     import ..Observables: poly_loop_avg, topological_charge, wilson_loop_all
 
     defaultmeasures = Array{Dict,1}(undef, 2)
@@ -204,7 +204,7 @@ module Measurements
         return nothing
     end
 
-    function calc_weights(q_vals::Vector{Float64}, b::BiasPotential)
+    function calc_weights(q_vals::Vector{Float64}, b::Metadynamics)
         weights = zeros(length(q_vals))
 
         for (i, q) in enumerate(q_vals)

@@ -24,32 +24,91 @@ Base.@kwdef mutable struct MetaDParameters{O}
 end
 
 Base.@kwdef mutable struct OPESParameters
+    explore::Bool = false
+    is_first_step::Bool = true
+    after_calculate::Bool = false
+
     is_static::Bool = false
-    symmetric::Bool = true
+    symmetric::Bool = false
     counter::Int64 = 1
 
-    bias_prefactor::Float64 = 1.0
+    barrier::Float64 = 40
+    biasfactor::Float64 = barrier
+    bias_prefactor::Float64 = 1-1/biasfactor
     stride::Int64 = 1
-    σ₀::Float64 = 1e-2
-    adaptive_σ_stride::Int64 = 1
+
+    σ₀::Float64 = 0.01
+    adaptive_σ::Bool = false
+    adaptive_σ_stride::Int64 = 0
     adaptive_counter::Int64 = 0
+    av_cv::Float64 = 0.0
+    av_m2::Float64 = 0.0
+    σ_min::Float64 = 1e-6
     fixed_σ::Bool = false
-    ϵ::Float64 = exp(-1/bias_prefactor)
+
+    ϵ::Float64 = exp(-barrier/bias_prefactor)
     sum_weights::Float64 = ϵ^bias_prefactor
     sum_weights²::Float64 = sum_weights^2
     current_bias::Float64 = 0.0
     no_Z::Bool = false
     Z::Float64 = 1
+    KDEnorm::Float64 = sum_weights
 
-    d_thresh::Float64 = 1
-    cutoff²::Float64 = sqrt(2/bias_prefactor)
+    d_thresh::Float64 = 1.0
+    cutoff²::Float64 = 2barrier/bias_prefactor
     penalty::Float64 = exp(-0.5cutoff²)
     kernels::StructArray{Kernel} = StructArray(Vector{Kernel}(undef, 0))
     kernelsfp::Union{Nothing, IOStream} = nothing
 
-    work::Float64 = 0.0
     old_sum_weights::Float64 = sum_weights
     old_Z::Float64 = Z
+    old_KDEnorm::Float64 = KDEnorm
+    δkernels::StructArray{Kernel} = StructArray(Vector{Kernel}(undef, 0))
+
+    probfp::Union{Nothing, IOStream} = nothing
+    write_prob_stride::Int64 = 1
+    store_old_probs::Bool = false
+end
+
+Base.@kwdef mutable struct OPESParameters1
+    explore::Bool = true
+    is_first_step::Bool = true
+    after_calculate::Bool = false
+
+    is_static::Bool = false
+    symmetric::Bool = false
+    counter::Int64 = 1
+
+    barrier::Float64 = 40.0
+    bias_prefactor::Float64 = barrier-1
+    stride::Int64 = 1
+
+    σ₀::Float64 = 0.1*sqrt(barrier)
+    adaptive_σ::Bool = false
+    adaptive_σ_stride::Int64 = 0
+    adaptive_counter::Int64 = 0
+    av_cv::Float64 = 0.0
+    av_m2::Float64 = 0.0
+    σ_min::Float64 = 1e-6
+    fixed_σ::Bool = false
+
+    ϵ::Float64 = exp(-barrier/bias_prefactor)
+    sum_weights::Float64 = ϵ^bias_prefactor
+    sum_weights²::Float64 = sum_weights^2
+    current_bias::Float64 = 0.0
+    no_Z::Bool = false
+    Z::Float64 = 1
+    KDEnorm::Float64 = counter
+
+    d_thresh::Float64 = 1.0
+    cutoff²::Float64 = 2*barrier
+    penalty::Float64 = exp(-0.5*cutoff²)
+    kernels::StructArray{Kernel} = StructArray(Vector{Kernel}(undef, 0))
+    kernelsfp::Union{Nothing, String} = nothing
+
+    old_sum_weights::Float64 = sum_weights
+    old_Z::Float64 = Z
+    old_KDEnorm::Float64 = KDEnorm
     δkernels::StructArray{Kernel} = StructArray(Vector{Kernel}(undef, 0))
 
     probfp::Union{Nothing, IOStream} = nothing
