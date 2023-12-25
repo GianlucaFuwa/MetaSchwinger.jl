@@ -4,8 +4,6 @@ struct Kernel
     σ::Float64
 end
 
-# define evaluation of kernel both as functor and normal function to make it applicable
-# to @turbo
 (k::Kernel)(s, cutoff², penalty) = evaluate_kernel(s, k.height, k.center, k.σ, cutoff², penalty)
 
 @inline function evaluate_kernel(s, height, center, σ, cutoff², penalty)
@@ -28,6 +26,7 @@ function Base.:+(k::Kernel, other::Kernel) # overloaded addition for kernel merg
     return Kernel(h, c, sqrt(s²))
 end
 
+# TODO: Ability to parse an existing OPES potential
 mutable struct OPES <: Bias
     explore::Bool
     is_first_step::Bool
@@ -86,8 +85,7 @@ mutable struct OPES <: Bias
         is_static = false
         symmetric = true
 
-        # CVlims = p.CVlims===nothing ? (-Inf, Inf) : p.CVlims
-        CVlims = (-6, 6)
+        CVlims = p.CVlims===nothing ? (-Inf, Inf) : p.CVlims
         println("\t>> CVlims = $(CVlims)")
         @assert CVlims[1] < CVlims[2] "First entry in CVLIMS must be smaller than second"
 
@@ -149,9 +147,9 @@ mutable struct OPES <: Bias
         penalty = exp(-0.5cutoff²)
 
         nker = 0
-        kernels = Vector{Kernel}(undef, 1000)
+        kernels = Vector{Kernel}(undef, 0)
         nδker = 0
-        δkernels = Vector{Kernel}(undef, 2)
+        δkernels = Vector{Kernel}(undef, 0)
 
         d_thresh = p.d_thresh === nothing ? 1.0 : p.d_thresh
         d_thresh != 0 && (@assert d_thresh > 0 && d_thresh^2 < cutoff² "")
@@ -200,7 +198,7 @@ mutable struct OPES <: Bias
 end
 
 function (o::OPES)(cv) # OPES functor that calculates current_bias among other things
-    if !in_bounds(cv, o.CVlims...)
+    if !in_bounds(cv, o.CVlims[1], o.CVlims[2])
         bounds_penalty = 1000
         bound = sign(cv)==1 ? o.CVlims[2] : o.CVlims[1]
         dist² = (cv - bound)^2
@@ -243,16 +241,7 @@ function set_penalty!(o::OPES, val)
     return nothing
 end
 
-function update_bias!(o::OPES, s; itrj=1)
-    o.is_static && return nothing
-    calculate!(o, s)
-    update_opes!(o, s, itrj)
-    if o.symmetric
-        calculate!(o, -s)
-        update_opes!(o, -s, itrj; symmetric=true)
-    end
-    return nothing
-end
+update_bias!(o::OPES, s; itrj=1) = o.is_static ? nothing : update_opes!(o, s, itrj)
 
 function update_opes!(o::OPES, s, itrj; symmetric=false)
     if o.is_first_step
@@ -260,11 +249,8 @@ function update_opes!(o::OPES, s, itrj; symmetric=false)
         return nothing
     end
 
-    kernels = o.kernels
-    δkernels = o.δkernels
-
     # update variance if adaptive σ
-    if o.adaptive_σ && !symmetric
+    if o.adaptive_σ
         o.adaptive_counter += 1
         τ = o.adaptive_σ_stride
         if o.adaptive_counter < o.adaptive_σ_stride
@@ -280,17 +266,30 @@ function update_opes!(o::OPES, s, itrj; symmetric=false)
         (o.adaptive_counter<o.adaptive_σ_stride && o.counter==1) && return nothing
     end
 
-    (itrj%o.stride != 0 || !in_bounds(s, o.CVlims...)) && return nothing
+    # do update
+    if itrj%o.stride != 0 || sum([in_bounds(sᵢ, o.CVlims[1], o.CVlims[2]) for sᵢ in s])==0
+        return nothing
+    end
+
+    kernels = o.kernels
+    δkernels = o.δkernels
     o.old_KDEnorm = o.KDEnorm
     old_nker = o.nker
 
     # get new kernel height
-    height = exp(o.current_bias)
+    is_float = isa(s, Float64)
+    inbounds_indices = findall(x->in_bounds(x, o.CVlims[1], o.CVlims[2]), s)
+    s_inbounds = is_float ? s : s[inbounds_indices]
+    current_bias = is_float ? o(s) : [o(sᵢ) for sᵢ in s_inbounds]
+    height = is_float ? exp(current_bias) : [exp(Vᵢ) for Vᵢ in current_bias]
 
     # update sum_weights and neff
-    o.counter += 1
-    o.sum_weights += height
-    o.sum_weights² += height^2
+    symm_factor = o.symmetric ? 2 : 1
+    sum_heights = symm_factor * sum(height)
+    sum_heights² = symm_factor^2 * sum(height.*height)
+    o.counter += symm_factor * length(s_inbounds)
+    o.sum_weights += sum_heights
+    o.sum_weights² += sum_heights²
     neff = (1 + o.sum_weights)^2 / (1 + o.sum_weights²)
     if o.explore
         o.KDEnorm = o.counter
@@ -321,8 +320,13 @@ function update_opes!(o::OPES, s, itrj; symmetric=false)
     # so we leave it out altogether but keep the s_rescaling
     height *= (o.σ₀ / σ)
 
-    # add new kernel
-    add_kernel!(o, height, s, σ, o.current_bias)
+    # add new kernels
+	empty!(o.δkernels)
+	o.nδker = 0
+    for i in eachindex(s_inbounds)
+        add_kernel!(o, height[i], s_inbounds[i], σ)
+        o.symmetric && add_kernel!(o, height[i], -s_inbounds[i], σ)
+    end
 
     # update Z
     if !o.no_Z
@@ -352,14 +356,14 @@ function update_opes!(o::OPES, s, itrj; symmetric=false)
         o.Z = sum_uprob / o.KDEnorm / o.nker
     end
 
-    if o.write_state_every > 0 && itrj%o.write_state_every == 0 && !symmetric
-        dump_state_to_file(o, itrj)
+    if o.write_state_every > 0 && itrj%o.write_state_every == 0
+        dump_state_to_file(o, "_$itrj")
     end
 
     return nothing
 end
 
-function add_kernel!(o::OPES, height, s, σ, logweight=nothing)
+function add_kernel!(o::OPES, height, s, σ)
     kernels = o.kernels
     δkernels = o.δkernels
     new_kernel = Kernel(height, s, σ)
@@ -367,21 +371,16 @@ function add_kernel!(o::OPES, height, s, σ, logweight=nothing)
     if o.d_thresh != 0
         i_min = get_mergeable_kernel(s, kernels, o.d_thresh, o.nker)
 
-        if i_min < o.nker+1
-            δkernels[1] = -1 * kernels[i_min]
+        if i_min <= length(kernels)
+            push!(δkernels, -1*kernels[i_min])
             kernels[i_min] = kernels[i_min] + new_kernel
-            δkernels[2] = kernels[i_min]
-            o.nδker = 2
+            push!(δkernels, kernels[i_min])
+            o.nδker += 2
         else
-            if o.nker+1 > length(kernels)
-                push!(kernels, new_kernel)
-                o.nker += 1
-            else
-                kernels[o.nker+1] = new_kernel
-                o.nker += 1
-            end
-            δkernels[1] = new_kernel
-            o.nδker = 1
+			push!(kernels, new_kernel)
+			o.nker += 1
+            push!(δkernels, new_kernel)
+            o.nδker += 1
         end
     end
 
@@ -402,14 +401,14 @@ function get_mergeable_kernel(s, kernels, d_thresh, nker)
     return i_min
 end
 
-function dump_state_to_file(o::OPES, args...)
+function dump_state_to_file(o::OPES, str)
     (tmppath, tmpio) = mktemp()
     println(tmpio, "height\tcenter\tsigma")
     for kernel in o.kernels
         println(tmpio, "$(kernel.height)\t$(kernel.center)\t$(kernel.σ)")
     end
     close(tmpio)
-    mv(tmppath, o.kernelsfp*".txt", force=true)
+    mv(tmppath, o.kernelsfp*"$str.txt", force=true)
 
     println(o.statefp, "$(o.sum_weights)\t$(o.bias_prefactor)\t$(o.Z)\t$(o.ϵ)\t$(o.nker)\t$(o.σ₀)")
     flush(o.statefp)

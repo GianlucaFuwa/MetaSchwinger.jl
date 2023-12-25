@@ -1,6 +1,7 @@
 struct Metadynamics{O} <: Bias
     is_static::Bool
     symmetric::Bool
+    stride::Int64
 
     CVlims::NTuple{2, Float64}
     bin_width::Float64
@@ -34,6 +35,8 @@ struct Metadynamics{O} <: Bias
         instance === 0 && println("\t>> instance 0 has dummy bias")
         is_static = instance==0 ? true : p.is_static[instance]
         symmetric = p.symmetric
+        stride = p.stride
+        instance !== 0 && println("\t>> STRIDE = $(stride)")
 
         CVlims = p.CVlims
         instance !== 0 && println("\t>> CVLIMS = $(CVlims)")
@@ -96,7 +99,7 @@ struct Metadynamics{O} <: Bias
         end
         println()
         return new{typeof(minimizer)}(
-            is_static, symmetric,
+            is_static, symmetric, stride,
             CVlims, bin_width, w, k,
             parametric, current_parameters, lower_bounds, upper_bounds, batchsize,
             cv_storage, bias_storage, fullbias_storage, testfun, minimizer,
@@ -119,7 +122,7 @@ function potential_from_file(p::ParameterSet, usebias::Union{Nothing,String})
         println("\t>> BIAS INITIATED AS ZEROS")
         return zeros(len)
     else
-        values = readdlm(usebias, Float64, comments = true)
+        values, _ = readdlm(usebias, Float64, comments=true, header=true)
         len = 1 + round(
             Int,
             (p.CVlims[2] - p.CVlims[1]) / p.bin_width,
@@ -127,7 +130,7 @@ function potential_from_file(p::ParameterSet, usebias::Union{Nothing,String})
         )
         @assert length(values[:,2]) == len  "Potential length doesn't match parameters"
         println("\t>> BIAS INITIATED FROM: \"$(usebias)\"")
-        return values[:,2]
+        return values[:, 2]
     end
 end
 
@@ -158,20 +161,33 @@ function clear!(b::Metadynamics)
 end
 
 function update_bias!(b::Metadynamics, cv; itrj=1)
-    b.is_static && return nothing
+    (b.is_static || itrj%b.stride!=0) && return nothing
     if b.parametric == false
-        update_bias_regular!(b, cv)
-
-        if b.symmetric
-            update_bias_regular!(b, -cv)
+        for cvᵢ in cv
+            update_bias_regular!(b, cvᵢ)
         end
 
+        if b.symmetric
+            for cvᵢ in cv
+                update_bias_regular!(b, -cvᵢ)
+            end
+        end
+
+        b.values .-= minimum(b.values)
     elseif b.parametric == true
-        update_bias_parametric!(b, cv, itrj)
+        for cvᵢ in cv
+            update_bias_parametric!(b, cvᵢ)
+        end
+
+        if b.symmetric
+            for cvᵢ in cv
+                update_bias_parametric!(b, -cvᵢ)
+            end
+        end
     end
 
     if b.write_state_every>0 && itrj%b.write_state_every == 0
-        dump_state_to_file(b, itrj)
+        dump_state_to_file(b, "_$itrj")
     end
     return nothing
 end
@@ -199,8 +215,12 @@ function return_bias(b::Metadynamics, cv)
     if cvmin <= cv < cvmax
         grid_index = index(b, cv)
         return b[grid_index]
+    elseif cv < cvmin
+        penalty = b.k * (cv - cvmin)^2 + b[1]
+        return penalty
     else
-        penalty = b.k * (0.1 + min((cv - cvmin)^2, (cv - cvmax)^2))
+        i = length(b.values)-1
+        penalty = b.k * (cv - cvmax)^2 + b[i]
         return penalty
     end
 end
@@ -220,7 +240,8 @@ function write_to_file(b::Metadynamics, fp)
     return nothing
 end
 
-function dump_state_to_file(b::Metadynamics, itrj)
+function dump_state_to_file(b::Metadynamics, str)
+    b.is_static && return nothing
     (tmppath, tmpio) = mktemp()
     println(tmpio, "cv\tV(cv)")
 
@@ -230,6 +251,6 @@ function dump_state_to_file(b::Metadynamics, itrj)
     end
 
     close(tmpio)
-    mv(tmppath, b.biasfile*"_$itrj.txt", force = true)
+    mv(tmppath, b.biasfile*"$str.txt", force=true)
     return nothing
 end

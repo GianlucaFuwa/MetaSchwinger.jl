@@ -57,8 +57,8 @@ function KStest(parameters, b::Metadynamics)
     #cdf = ecdf(cv_data, weights = exp.(Sg.(cv_data) + bias_data))
     sorteddata = cdf.sorted_values
 
-    cvmin = sorteddata[1]
-    cvmax = sorteddata[end]
+    cvmin = b.CVlims[1]
+    cvmax = b.CVlims[2]
 
     l = abs(0.0 - (sorteddata[1] - cvmin) / (cvmax - cvmin))
     r = abs(cdf(sorteddata[1]) - (sorteddata[1] - cvmin) / (cvmax - cvmin))
@@ -91,8 +91,8 @@ function GADtest(parameters, b::Metadynamics)
     F = ecdf(cv_data, weights = weight.(cv_data, bias_data, fullbias_data))
     sorteddata = F.sorted_values
     #cvmin, cvmax = get_CVlims(b)
-    cvmin = floor(minimum(sorteddata))
-    cvmax = ceil(maximum(sorteddata))
+    cvmin = b.CVlims[1]
+    cvmax = b.CVlims[2]
 
     S = 0.0
 
@@ -124,8 +124,8 @@ function GADLTtest(parameters, b::Metadynamics)
     #F = ecdf(cv_data, weights = exp.(Sg.(cv_data) + bias_data))
     F = ecdf(cv_data, weights = weight.(cv_data, bias_data, fullbias_data))
     sorteddata = F.sorted_values
-    cvmin = floor(minimum(sorteddata))
-    cvmax = ceil(maximum(sorteddata))
+    cvmin = b.CVlims[1]
+    cvmax = b.CVlims[2]
 
     S = 0.0
 

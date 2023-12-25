@@ -36,13 +36,14 @@ module Mainrun
                 fields = Vector{Gaugefield}(undef, 0)
                 biases = Vector{Metadynamics}(undef, 0)
 
-                push!(fields, Gaugefield(params; instance=params.no_zero_instance))
+                push!(fields, Gaugefield(params; instance=Int64(params.no_zero_instance)))
                 updatemethod₁ = Updatemethod(params, fields[1])
                 updatemethod = Vector{typeof(updatemethod₁)}(undef, 0)
                 push!(updatemethod, updatemethod₁)
 
-                for _ in 2:params.numinstances
-                    deepcopy(updatemethod₁)
+                for i in 2:params.numinstances
+                    push!(fields, Gaugefield(params; instance=i-1+params.no_zero_instance))
+                    push!(updatemethod, Updatemethod(params, fields[i]))
                 end
 
                 for i in 1:params.numinstances
@@ -224,8 +225,8 @@ module Mainrun
         for i in 1:numinstances
             push!(
                 meassets,
-                MeasurementSet(params.measure_dir, meas_calls = params.meas_calls,
-                instance = "_$(i - !params.no_zero_instance)")
+                MeasurementSet(params.measure_dir, meas_calls=params.meas_calls,
+                instance = "_$(i-!params.no_zero_instance)")
             )
         end
 
@@ -244,25 +245,13 @@ module Mainrun
             end
         end
 
-        if params.starting_Q !== nothing
-            for i in 1:numinstances
-                instanton!(fields[i], params.starting_Q[i], rng[i], metro_test=false)
-            end
-        end
-
-        numaccepts = zeros(Int64, 8numinstances)
-        num_swaps = zeros(Int64, numinstances - 1)
-        bias_means = []
-
-        for i in 1:numinstances
-            push!(bias_means, deepcopy(biases[i].values))
-        end
+        numaccepts = zeros(Float64, numinstances)
+        num_swaps = zeros(Int64, numinstances-1)
 
         for itrj in 1:params.Nsweeps
 
             for i in 1:numinstances
-                numaccepts[i] = update!(updatemethod[i], fields[i], rng[i]; bias=biases[i])
-                bias_means[i] += biases[i].values
+                numaccepts[i] += update!(updatemethod[i], fields[i], rng[i]; bias=biases[i])
                 update_bias!(biases[i], fields[i].CV)
             end
 
@@ -286,14 +275,6 @@ module Mainrun
                             biases[i+1],
                             rng[1],
                         )
-                        if itrj%5000 == 0
-                            println_verbose(
-                                verbose,
-                                num_swaps[i] / (5000÷params.swap_every),
-                                " # swapaccrate $i ⇔ $(i+1)",
-                            )
-                            num_swaps[i] = 0
-                        end # END PRINT
                     end # END SWAP LOOP
                 end # END IF HEATBATH
             end # END IF SWAP
@@ -312,7 +293,7 @@ module Mainrun
                     "# Acceptance rate ",
                     i,
                     ": ",
-                    100 * numaccepts[i] / params.Nsweeps / fields[i].NV / 2 / multi_hit,
+                    100 * numaccepts[i] / params.Nsweeps,
                     "%"
                 )
                 if i < numinstances
@@ -335,10 +316,10 @@ module Mainrun
                 pwd()*"/$(params.measure_dir)/Meta_charge_$(i-!params.no_zero_instance).txt",
                 header = true,
             )
-            weights = calc_weights(q_vals[:,2], biases[i])
+            weights = calc_weights(q_vals[:, 2], biases[i])
 
-            open(params.weightfiles[i - !params.no_zero_instance], "w") do io
-                writedlm(io, [q_vals[:,1] weights])
+            open(params.weightfiles[i-!params.no_zero_instance], "w") do io
+                writedlm(io, [q_vals[:, 1] weights])
             end
 
             effective_samplesize = round(Int, sum(weights)^2 / sum(weights.^2))
