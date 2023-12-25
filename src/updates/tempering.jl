@@ -26,12 +26,8 @@ function tempering_swap!(field1, field2, bias1, bias2, rng)
 		field2.Sg += ΔSg
 		field1.Sg -= ΔSg
 
-		if !bias1.is_static
-			update!(bias1, field1.CV)
-		end
-		if !bias2.is_static
-			update!(bias2, field2.CV)
-		end
+        update_bias!(bias1, field1.CV)
+        update_bias!(bias2, field2.CV)
 	end
 
 	return accept_swap
@@ -40,10 +36,10 @@ end
 function swap!(a, b)
 	NX, NT = size(a)
 
-	for μ in 1:2
-		for it in 1:NT
-			for ix in 1:NX
-				a[ix,it,μ], b[ix,it,μ] = b[ix,it,μ], a[ix,it,μ]
+    for it in 1:NT
+        for ix in 1:NX
+            for μ in 1:2
+                a[μ,ix,it], b[μ,ix,it] = b[μ,ix,it], a[μ,ix,it]
 			end
 		end
 	end

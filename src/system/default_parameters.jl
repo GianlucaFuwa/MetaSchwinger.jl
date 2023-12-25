@@ -34,7 +34,10 @@ meta["is_static"] = [false]
 meta["well_tempered"] = false
 meta["take_snapshot_every"] = nothing
 meta["no_zero_instance"] = false
+meta["stride"] = 1
 
+opes["is_static"] = [false]
+opes["symmetric"] = true
 opes["opes_enabled"] = false
 opes["explore"] = nothing
 opes["barrier"] = nothing

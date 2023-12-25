@@ -17,7 +17,7 @@ module Parameters
 
 	printlist_meta = [
         "meta_enabled",
-        "opes",
+        "stride",
         "tempering_enabled",
         "numinstances",
         # "tempering_heatbath",
@@ -234,6 +234,9 @@ module Parameters
 
             if opes_enabled
                 @assert !meta_enabled "meta and opes cannot be enabled at the same time"
+                is_static = opes["is_static"]
+                symmetric = opes["symmetric"]
+                CVlims = opes["CVlims"]
                 explore = opes["explore"]
                 barrier = opes["barrier"]
                 biasfactor = opes["biasfactor"]
@@ -253,6 +256,9 @@ module Parameters
                 end
                 statefp = biasdir * "/" * system["statefp"] * ".txt"
             else
+                is_static = nothing
+                CVlims = nothing
+                symmetric = nothing
                 explore = nothing
                 barrier = nothing
                 biasfactor = nothing
@@ -274,6 +280,7 @@ module Parameters
                 # tempering_heatbath = meta["tempering_heatbath"]
                 parametric = meta["parametric"]
                 symmetric = meta["symmetric"]
+                stride = meta["stride"]
                 CVlims = meta["CVlims"]
                 bin_width = meta["bin_width"]
                 w = meta["w"]
@@ -349,12 +356,9 @@ module Parameters
                 batchsize = nothing
                 testfun = nothing
                 minimizer = nothing
-                symmetric = nothing
-                CVlims = nothing
                 bin_width = nothing
                 w = nothing
                 k = nothing
-                is_static = nothing
                 well_tempered = nothing
                 ΔT = nothing
                 take_snapshot_every = nothing

@@ -2,7 +2,7 @@ module Updates
     using LoopVectorization
     using Random
 
-    import ..BiasModule: Bias, ∂V∂Q
+    import ..BiasModule: Bias, ∂V∂Q, update_bias!
     import ..Gaugefields: Gaugefield, Liefield, add!, calc_kinetic_energy, calc_CV, calc_Sg,
         gaussian_momenta!, recalc_CV!, substitute_U!, staple
     import ..Parameters: ParameterSet

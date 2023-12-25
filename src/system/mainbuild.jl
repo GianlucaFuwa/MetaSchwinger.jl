@@ -5,7 +5,7 @@ module Mainbuild
     using InteractiveUtils
 
     import ..BiasModule: Metadynamics, OPES, clear!, parametric_to_bias!, update_bias!,
-        dump_state_to_file
+        dump_state_to_file, MSE
     import ..DiracOperators: dirac_operator
     import ..Gaugefields: Gaugefield, recalc_Sg!, recalc_CV!
     import ..Updates: Updatemethod, update!
@@ -85,9 +85,18 @@ module Mainbuild
             end
 
             measurements(itrj, field, measset)
+            # MSEᵢ, STDᵢ = MSE(bias)
+            # itrj%100==0 && println_verbose(verbose, MSEᵢ, "\t", STDᵢ, "\t# $itrj")
+            # if MSEᵢ < 2.5
+            #     println_verbose(verbose, ">>Bias has converged after $(itrj) iterations\n")
+            #     break
+            # end
+            flush(verbose)
         end
 
-        println_verbose(verbose, "Acceptance rate: ", 100*numaccepts/Nsweeps, "%")
+        dump_state_to_file(bias, "final")
+
+        println_verbose(verbose, "# Acceptance rate: ", 100*numaccepts/Nsweeps, "%")
         flush(stdout)
         flush(verbose)
         return nothing
@@ -120,6 +129,14 @@ module Mainbuild
             end
         end
 
+        if params.starting_Q !== nothing
+            println_verbose(verbose, ">> Starting at Qs: ")
+            for i in 1:numinstances
+                instanton!(fields[i], params.starting_Q[i], rng[i]; metro_test=false)
+                println_verbose(verbose, "$(params.starting_Q[i])")
+            end
+        end
+
         for _ in 1:params.Ntherm
             for i in 1:numinstances
                 update!(updatemethod[i], fields[i], rng[i])
@@ -130,13 +147,8 @@ module Mainbuild
             cum_bias.parametric && parametric_to_bias!(cum_bias)
         end
 
-        if params.starting_Q !== nothing
-            for i in 1:numinstances
-                instanton!(fields[i], params.starting_Q[i], rng[i]; metro_test=false)
-            end
-        end
-
         numaccepts = zeros(Float64, numinstances)
+        CVs = zeros(Float64, numinstances)
 
         for itrj in 1:params.Nsweeps
             for i in 1:numinstances
@@ -144,8 +156,10 @@ module Mainbuild
             end
 
             for i in 1:numinstances
-                update_bias!(cum_bias, fields[i].CV; itrj=itrj)
+                CVs[i] = fields[i].CV
             end
+
+            update_bias!(cum_bias, CVs; itrj=itrj)
 
             if params.take_snapshot_every !== nothing
                 if itrj%params.take_snapshot_every == 0
@@ -156,10 +170,18 @@ module Mainbuild
             for i in 1:numinstances
                 measurements(itrj, fields[i], meassets[i])
             end
+
+            if itrj%1000 == 0
+                MSEᵢ, STDᵢ = MSE(cum_bias)
+                println_verbose(verbose, MSEᵢ, "\t", STDᵢ, "\t# $itrj")
+            end
+            flush(verbose)
         end
 
+        dump_state_to_file(cum_bias, "")
+
         for i in 1:numinstances
-            println_verbose(verbose, "Acc. rate $i: $(100*numaccepts[i]/params.Nsweeps)%")
+            println_verbose(verbose, "# Acc. rate $i: $(100*numaccepts[i]/params.Nsweeps)%")
         end
 
         flush(stdout)
