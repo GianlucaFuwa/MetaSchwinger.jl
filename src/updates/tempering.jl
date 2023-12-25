@@ -1,55 +1,52 @@
-module Tempering
-    
-    import ..Gaugefields: Gaugefield
-    import ..Metadynamics: BiasPotential, update_bias!
+function tempering_heatbath!(fields, biases, rng)
+    numinstances = length(fields)
 
-    function tempering_swap!(
-		field1::Gaugefield,
-		field2::Gaugefield,
-		bias1::BiasPotential,
-		bias2::BiasPotential,
-		rng;
-		actually_swap::Bool = true, # "Fake swap" for when we want to do parallel building
-	)
-		CV1 = field1.CV
-		CV2 = field2.CV
+    accepted_swaps = 0
+    for i in 2:numinstances
+        accepted_swaps += tempering_swap!(fields[1], fields[i], biases[1], biases[i], rng)
+    end
 
-		ΔCV = CV1 - CV2
-		ΔSg = field1.Sg - field2.Sg
-		ΔV1 = bias1(CV2) - bias1(CV1)
-		ΔV2 = bias2(CV1) - bias2(CV2)
-		accept_swap = rand(rng) ≤ exp(- ΔV1 - ΔV2)
+    return accepted_swaps
+end
 
-		if accept_swap && actually_swap
-			swap!(field1, field2)
-			field2.CV += ΔCV
-			field1.CV -= ΔCV
-			field2.Sg += ΔSg
-			field1.Sg -= ΔSg
-			
-			if !bias1.is_static
-				update_bias!(bias1, field1.CV)
-			end
-			if !bias2.is_static
-				update_bias!(bias2, field2.CV)
-			end
+function tempering_swap!(field1, field2, bias1, bias2, rng)
+	CV1 = field1.CV
+	CV2 = field2.CV
+
+	ΔCV = CV1 - CV2
+	ΔSg = field1.Sg - field2.Sg
+	ΔV1 = bias1(CV2) - bias1(CV1)
+	ΔV2 = bias2(CV1) - bias2(CV2)
+	accept_swap = rand(rng) ≤ exp(-ΔV1-ΔV2)
+
+	if accept_swap
+		swap!(field1, field2)
+		field2.CV += ΔCV
+		field1.CV -= ΔCV
+		field2.Sg += ΔSg
+		field1.Sg -= ΔSg
+
+		if !bias1.is_static
+			update!(bias1, field1.CV)
 		end
-
-		return accept_swap
-	end 
-
-	function swap!(a::Gaugefield, b::Gaugefield)
-		NX, NT, _ = size(a)
-
-		for μ in 1:2
-			for it in 1:NT
-				for ix in 1:NX
-					a[ix,it,μ], b[ix,it,μ] = b[ix,it,μ], a[ix,it,μ]
-				end
-			end
+		if !bias2.is_static
+			update!(bias2, field2.CV)
 		end
-
-		return nothing
 	end
 
+	return accept_swap
+end
+
+function swap!(a, b)
+	NX, NT = size(a)
+
+	for μ in 1:2
+		for it in 1:NT
+			for ix in 1:NX
+				a[ix,it,μ], b[ix,it,μ] = b[ix,it,μ], a[ix,it,μ]
+			end
+		end
+	end
+
+	return nothing
 end

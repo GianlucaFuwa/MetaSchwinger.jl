@@ -1,10 +1,10 @@
-# Schwinger-Metadynamics
+# MetaSchwinger.jl
 Variations of Metadynamics in Simulations of the Schwinger Model (1+1D QED)
 
 ## Features
 - Basic quenched Schwinger Model simulations
-- Metadynamics (doi: 10.1073/pnas.202427399) simulations incl. Well-Tempered Metadynamics (doi: 10.1103/PhysRevLett.100.020603) 
-  and Parallel Tempering (Geyer, C. J. (1991). Markov chain Monte Carlo maximum likelihood. Computing Science and Statistics: Proc. 23rd Symp. Interface, 156–163.) incl.   the possibility to add a different Metapotential to each of the instances
+- [Metadynamics](https://www.researchgate.net/publication/224908601_Metadynamics_A_method_to_simulate_rare_events_and_reconstruct_the_free_energy_in_biophysics_chemistry_and_material_science)
+- [PT-MetaD](https://arxiv.org/abs/2307.04742)
 
 ## Quick Start
 1. (Optional) Choose parameters of your choice to build a Metapotential first (use: template/parameters_build.jl to see structure) and do:
@@ -16,6 +16,5 @@ julia src/build.jl templates/build_parameters.jl
 ```
 julia -t 2 src/run.jl templates/sim_parameters.jl
 ```
-**! Make sure to specify the number of CPU-threads to be equal to or more than the amount of instances when using Parallel Tempering!** 
 
 Measurements are outputted as .txt files in the chosen directories; you can use them to make plots as you wish.

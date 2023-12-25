@@ -1,4 +1,4 @@
-module Verbose_print
+module VerbosePrint
     import InteractiveUtils
 
     abstract type Verbose end

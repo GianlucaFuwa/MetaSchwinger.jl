@@ -1,19 +1,29 @@
 struct WilsonDiracOperator <: AbstractDiracOperator
+    Dop::Matrix{ComplexF64}
+    expiU::Array{ComplexF64, 3}
     mass::Float64
     BC::Vector{Int64}
+
+    function WilsonDiracOperator(N, mass, BC)
+        NX, NT = N
+        len = NX * NT * 2
+        Dop = zeros(ComplexF64, len, len)
+        expiU = Array{ComplexF64, 3}(undef, NX, NT, 2)
+        return new(Dop, expiU, mass, BC)
+    end
 end
 
 function (D::WilsonDiracOperator)(U::Gaugefield)
-    NX, NT, d = size(U)
+    NX, NT = size(U)
     mass = D.mass
     BC_x, BC_t = D.BC
+    expiU = D.expiU
+    Dop = D.Dop
 
-    len = NX * NT * d
-    expiU = cis(U)
+    clear!(D)
+    expiU .= cis(U)
 
-    Dwils = zeros(ComplexF64, len, len)
-
-    for nx in 1:NX
+    @batch for nx in 1:NX
         for nt in 1:NT
             n = flat_index(NX, nx, nt)
 
@@ -29,16 +39,14 @@ function (D::WilsonDiracOperator)(U::Gaugefield)
             nmx = flat_index(NX, nx_min, nt)
             npt = flat_index(NX, nx, mod1(nt + 1, NT))
             nmt = flat_index(NX, nx, nt_min)
-            
-            view(Dwils, n:(n+1), n:(n+1)) .+= (mass + 2) * eye2
-            view(Dwils, n:(n+1), npx:(npx+1)) .-= 0.5 * (eye2 - γ1) * expiU[nx,nt,1] * BC_xp
-            view(Dwils, n:(n+1), nmx:(nmx+1)) .-= 0.5 * (eye2 + γ1) * conj(expiU[nx_min,nt,1]) * BC_xm
-            view(Dwils, n:(n+1), npt:(npt+1)) .-= 0.5 * (eye2 - γ2) * expiU[nx,nt,2] * BC_tp
-            view(Dwils, n:(n+1), nmt:(nmt+1)) .-= 0.5 * (eye2 + γ2) * conj(expiU[nx,nt_min,2]) * BC_tm
+
+            view(Dop, n:(n+1), n:(n+1)) .+= (mass + 2) * eye2
+            view(Dop, n:(n+1), npx:(npx+1)) .-= 0.5 * (eye2 - γ1) * expiU[nx,nt,1] * BC_xp
+            view(Dop, n:(n+1), nmx:(nmx+1)) .-= 0.5 * (eye2 + γ1) * conj(expiU[nx_min,nt,1]) * BC_xm
+            view(Dop, n:(n+1), npt:(npt+1)) .-= 0.5 * (eye2 - γ2) * expiU[nx,nt,2] * BC_tp
+            view(Dop, n:(n+1), nmt:(nmt+1)) .-= 0.5 * (eye2 + γ2) * conj(expiU[nx,nt_min,2]) * BC_tm
         end
     end
 
-    return Dwils
+    return nothing
 end
-
-
