@@ -47,10 +47,7 @@ module Mainrun
                 end
 
                 for i in 1:params.numinstances
-                    push!(
-                        biases,
-                        Metadynamics(params; instance=i-1+params.no_zero_instance),
-                    )
+                    push!(biases, Metadynamics(params; instance=i-1+params.no_zero_instance))
                 end
 
                 run_tempered_sim!(fields, biases, updatemethod, verbose, params)
@@ -75,11 +72,8 @@ module Mainrun
     end
 
     function run_sim!(field, updatemethod, dirac, verbose, params)
-        measset = MeasurementSet(
-            params.measure_dir,
-            meas_calls = params.meas_calls,
-            D = dirac,
-        )
+        measset = MeasurementSet(params.measure_dir, meas_calls=params.meas_calls,
+                                 D=dirac)
 
         rng = params.randomseeds[1]
 
@@ -105,20 +99,11 @@ module Mainrun
             measurements(itrj, field, measset)
         end
 
-        println_verbose(
-            verbose,
-            "Acceptance rate: ",
-            100 * numaccepts / params.Nsweeps,
-            "%"
-        )
+        println_verbose(verbose, "Acceptance rate: ", 100numaccepts / params.Nsweeps, "%")
 
         if params.instanton_enabled
-            println_verbose(
-                verbose,
-                "Instanton acceptance rate: ",
-                100 * numaccepts_instanton / params.Nsweeps,
-                "%"
-            )
+            println_verbose(verbose, "Instanton acceptance rate: ",
+                            100numaccepts_instanton / params.Nsweeps, "%")
         end
 
         flush(stdout)
@@ -129,11 +114,8 @@ module Mainrun
     #=====================================================================================#
 
     function run_sim!(field, bias, updatemethod, dirac, verbose, params)
-        measset = MeasurementSet(
-            params.measure_dir,
-            meas_calls = params.meas_calls,
-            D = dirac,
-        )
+        measset = MeasurementSet(params.measure_dir, meas_calls=params.meas_calls,
+                                 D=dirac)
 
         rng = params.randomseeds[1]
 
@@ -155,38 +137,23 @@ module Mainrun
             update_bias!(bias, field.CV, itrj=itrj)
 
             if params.veryverbose
-                println_verbose(
-                    verbose,
-                    " ",
-                    itrj,
-                    " ",
-                    100 * numaccepts / itrj,
-                    "%",
-                    " # itrj accrate"
-                )
+                println_verbose(verbose, " ", itrj, " ", 100 * numaccepts / itrj, "%",
+                                " # itrj accrate")
             end
 
             typeof(bias) <: Metadynamics && (bias_mean += bias.values)
             measurements(itrj, field, measset)
         end
 
-        println_verbose(
-            verbose,
-            "Acceptance rate: ",
-            100 * numaccepts / params.Nsweeps,
-            "%"
-        )
+        println_verbose(verbose, "Acceptance rate: ", 100numaccepts / params.Nsweeps, "%")
 
         if typeof(bias) <: Metadynamics
             copyto!(bias.values, bias_mean / params.Nsweeps)
 
-            q_vals, _ = readdlm(
-                pwd() * "/" * params.measure_dir * "/Meta_charge.txt",
-                Float64,
-                comments = true,
-                header = true,
-            )
+            q_vals, _ = readdlm(pwd() * "/" * params.measure_dir * "/Meta_charge.txt",
+                                Float64, comments=true, header=true)
             weights = calc_weights(q_vals[:,2], bias)
+            @show params.weightfiles[1]
 
             open(params.weightfiles[1], "w") do io
                 writedlm(io, [q_vals[:,1] weights])
@@ -198,36 +165,25 @@ module Mainrun
 
         flush(stdout)
         flush(verbose)
+        close(measset)
         return nothing
     end
 
     #=====================================================================================#
 
-    function run_tempered_sim!(
-        fields::Vector{Gaugefield},
-        biases::Vector{Metadynamics},
-        updatemethod,
-        verbose,
-        params,
-    )
+    function run_tempered_sim!(fields::Vector{Gaugefield}, biases::Vector{Metadynamics},
+                               updatemethod, verbose, params)
         numinstances = params.numinstances
-        println_verbose(
-            verbose,
-            "# Parallel tempered run with ",
-            Int(!params.no_zero_instance),
-            " regular instance and ",
-            numinstances - !params.no_zero_instance,
-            " MetaD instances"
-        )
+        println_verbose(verbose, "# Parallel tempered run with ", Int(!params.no_zero_instance),
+                        " regular instance and ", numinstances - !params.no_zero_instance,
+                        " MetaD instances")
 
         meassets = Vector{MeasurementSet}(undef, 0)
 
         for i in 1:numinstances
-            push!(
-                meassets,
-                MeasurementSet(params.measure_dir, meas_calls=params.meas_calls,
-                instance = "_$(i-!params.no_zero_instance)")
-            )
+            push!(meassets,
+                  MeasurementSet(params.measure_dir, meas_calls=params.meas_calls,
+                  instance = "_$(i-!params.no_zero_instance)"))
         end
 
         rng = params.randomseeds
@@ -268,13 +224,8 @@ module Mainrun
                     end
                 else
                     for i in numinstances-1:-1:1
-                        num_swaps[i] += tempering_swap!(
-                            fields[i],
-                            fields[i+1],
-                            biases[i],
-                            biases[i+1],
-                            rng[1],
-                        )
+                        num_swaps[i] += tempering_swap!(fields[i], fields[i+1],
+                                                        biases[i], biases[i+1], rng[1])
                     end # END SWAP LOOP
                 end # END IF HEATBATH
             end # END IF SWAP
@@ -288,25 +239,13 @@ module Mainrun
             # println_verbose(verbose, "# Swap Acceptance rate: $(num_swaps[1]/)")
         else
             for i in 1:numinstances
-                println_verbose(
-                    verbose,
-                    "# Acceptance rate ",
-                    i,
-                    ": ",
-                    100 * numaccepts[i] / params.Nsweeps,
-                    "%"
-                )
+                println_verbose(verbose, "# Acceptance rate ", i, ": ",
+                                100 * numaccepts[i] / params.Nsweeps, "%")
                 if i < numinstances
-                    println_verbose(
-                        verbose,
-                        "# Swap Acceptance rate ",
-                        i,
-                        " ⇔ ",
-                        i + 1,
-                        ": ",
-                        100 * num_swaps[i] / (params.Nsweeps ÷ params.swap_every),
-                        "%"
-                    )
+                    println_verbose(verbose, "# Swap Acceptance rate ", i, " ⇔ ", i + 1,
+                                    ": ",
+                                    100 * num_swaps[i] / (params.Nsweeps ÷ params.swap_every),
+                                    "%")
                 end
             end
         end
@@ -328,6 +267,7 @@ module Mainrun
 
         flush(stdout)
         flush(verbose)
+        close.(meassets)
         return nothing
     end
 

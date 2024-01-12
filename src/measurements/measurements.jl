@@ -7,7 +7,7 @@ module Measurements
     import ..DiracOperators: AbstractDiracOperator
     import ..Gaugefields: Gaugefield, plaquette_sum
     import ..BiasModule: Metadynamics
-    import ..Observables: poly_loop_avg, topological_charge, wilson_loop_all
+    import ..Observables: poly_loop_avg, topological_charge, wilson_loop
 
     defaultmeasures = Array{Dict,1}(undef, 2)
 
@@ -23,17 +23,15 @@ module Measurements
     struct MeasurementSet
         nummeas::Int64
         D::Union{Nothing, AbstractDiracOperator}
-        meas_calls::Array{Dict,1}
-        meas_files::Array{IOStream,1}
+        meas_calls::Vector{Dict}
+        meas_files::Vector{IO}
+        wl_meas_files::Union{Nothing, Vector{IO}}
 
-        function MeasurementSet(
-            measure_dir;
-            meas_calls = defaultmeasures,
-            D = nothing,
-            instance = "",
-        )
+        function MeasurementSet(measure_dir; meas_calls = defaultmeasures, D = nothing,
+                                instance = "")
             nummeas = length(meas_calls)
-            meas_files = Array{IOStream,1}(undef, nummeas)
+            meas_files = Vector{IO}(undef, nummeas)
+            wl_meas_files = nothing
 
             for i in 1:nummeas
                 method = meas_calls[i]
@@ -99,23 +97,24 @@ module Measurements
                         meas_files[i],
                         "itrj\t$(rpad("Re(CC)", 21, " "))\t$(rpad("Im(CC)", 21, " "))",
                     )
-                elseif occursin("Wilson_loop", method["methodname"])
-                    meas_files[i] = open(
-                        measure_dir * "/" * method["methodname"] * instance * ".txt",
-                        meas_overwrite
-                    )
-                    println(meas_files[i], "itrj\tWLoops(1 -> NX)")
+                elseif method["methodname"] == "Wilson_loop"
+                    @assert iseven(method["LX"]) || iseven(method["LT"]) "Only even WL lims"
+                    meas_files[i] = devnull
+                    wl_meas_files = Vector{IO}(undef, 0)
+                    for ix in 2:2:method["LX"]
+                        for it in 2:2:method["LT"]
+                            fp = open(measure_dir * "/" * "Wilson_loop_$(ix)x$(it)" *
+                                      instance * ".txt", meas_overwrite)
+                            push!(wl_meas_files, fp)
+                            println(fp, "itrj\tWLoop")
+                        end
+                    end
                 else
                     error("$(method["methodname"]) is not supported")
                 end
             end
 
-            return new(
-                nummeas,
-                D,
-                meas_calls,
-                meas_files,
-            )
+            return new(nummeas, D, meas_calls, meas_files, wl_meas_files)
         end
     end
 
@@ -126,27 +125,29 @@ module Measurements
         for i in 1:measset.nummeas
             method = measset.meas_calls[i]
             measfile = measset.meas_files[i]
+            wl_measfiles = measset.wl_meas_files
             if itr % method["measure_every"] == 0
                 if method["methodname"] == "Plaquette"
                     plaq = plaquette_sum(field)
                     plaq /= field.NV
-                    plaqstr = @sprintf("%.15E", plaq)
+                    plaqstr = @sprintf("%+.15E", plaq)
                     println(measfile, "$(rpad("$itr", 5, " "))\t$plaqstr")
                 elseif method["methodname"] == "Action"
                     s = field.Sg / field.NV
-                    sstr = @sprintf("%.15E", s)
+                    sstr = @sprintf("%+.15E", s)
                     println(measfile, "$(rpad("$itr", 5, " "))\t$sstr")
                 elseif method["methodname"] == "Meta_charge"
                     q = field.CV
-                    qstr = @sprintf("%.15E", q)
+                    qstr = @sprintf("%+.15E", q)
                     println(measfile, "$(rpad("$itr", 5, " "))\t$qstr")
                 elseif method["methodname"] == "Topological_charge"
                     qt = topological_charge(field)
-                    println(measfile, "$(rpad("$itr", 5, " "))\t$qt")
+                    qtstr = @sprintf("%+i", qt)
+                    println(measfile, "$(rpad("$itr", 5, " "))\t$qtstr")
                 elseif method["methodname"] == "Polyakov_loop"
                     poly_re, poly_im = poly_loop_avg(field)
-                    poly_restr = @sprintf("%.15E", poly_re)
-                    poly_imstr = @sprintf("%.15E", poly_im)
+                    poly_restr = @sprintf("%+.15E", poly_re)
+                    poly_imstr = @sprintf("%+.15E", poly_im)
                     println(measfile, "$(rpad("$itr", 5, " "))\t$poly_restr\t$poly_imstr")
                 elseif method["methodname"] == "Dirac_eigenvalues"
                     if has_been_calculated == false
@@ -163,8 +164,8 @@ module Measurements
                     print(measfile, "$(rpad("$itr", 5, " "))")
 
                     for λ in vals
-                        λrestr = @sprintf("%.15E", real(λ))
-                        λimstr = @sprintf("%.15E", imag(λ))
+                        λrestr = @sprintf("%+.15E", real(λ))
+                        λimstr = @sprintf("%+.15E", imag(λ))
                         print(measfile, "\t$(λrestr) $(λimstr)")
                     end
 
@@ -176,8 +177,8 @@ module Measurements
                     end
 
                     logdetD = logdet(Ds)
-                    Drestr = @sprintf("%.15E", real(logdetD))
-                    Dimstr = @sprintf("%.15E", imag(logdetD))
+                    Drestr = @sprintf("%+.15E", real(logdetD))
+                    Dimstr = @sprintf("%+.15E", imag(logdetD))
                     println(measfile, "$(rpad("$itr", 5, " "))\t$Drestr\t$Dimstr")
                 elseif method["methodname"] == "Chiral_condensate"
                     if has_been_calculated == false
@@ -185,16 +186,21 @@ module Measurements
                     end
 
                     cc = tr(inv(D.Dop)) / field.NV
-                    ccrestr = @sprintf("%.15E", real(cc))
-                    ccimstr = @sprintf("%.15E", imag(cc))
+                    ccrestr = @sprintf("%+.15E", real(cc))
+                    ccimstr = @sprintf("%+.15E", imag(cc))
                     println(measfile, "$(rpad("$itr", 5, " "))\t$ccrestr\t$ccimstr")
-                elseif occursin( "Wilson_loop", method["methodname"])
-                    num = filter.(isdigit, method["methodname"])
-                    LT = parse(Int64, num)
-                    wils_re, wils_im = wilson_loop_all(field, LT)
-                    wils_re = round.(wils_re, sigdigits = 4)
-                    wils_im = round.(wils_im, sigdigits = 4)
-                    println(measfile, rpad("$itr", 5, " "), " ", wils_re, " ", wils_im)
+                elseif method["methodname"] == "Wilson_loop"
+                    LX = method["LX"]
+                    LT = method["LT"]
+                    i = 1
+                    for ix in 2:2:LX
+                        for it in 2:2:LT
+                            wils = wilson_loop(field, ix, it)
+                            wilsstr = @sprintf("%+.15E", wils)
+                            println(wl_measfiles[i],"$(rpad("$itr", 5, " "))\t$(wilsstr)")
+                            i += 1
+                        end
+                    end
                 else
                     error("$(method["methodname"]) is not supported")
                 end
@@ -215,4 +221,9 @@ module Measurements
         return weights
     end
 
+    function Base.close(m::MeasurementSet)
+        [close(fp) for fp in m.meas_files]
+        m.wl_meas_files!==nothing && [close(fp) for fp in m.wl_meas_files]
+        return nothing
+    end
 end

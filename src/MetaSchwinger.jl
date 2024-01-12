@@ -19,7 +19,7 @@ module MetaSchwinger
     import .Mainbuild: run_build
     import .Measurements: calc_weights, MeasurementSet, measurements
     import .BiasModule: Metadynamics, OPES, update_bias!
-    import .Observables: poly_loop_avg, topological_charge, wilson_loop_all
+    import .Observables: poly_loop_avg, topological_charge, wilson_loop
     import .Parameters: make_parameters, parameterloading
     import .Parameters: ParamSet, ParameterSet, print_parameters
 
@@ -28,6 +28,7 @@ module MetaSchwinger
     export Gaugefield, plaquette, calc_CV, calc_Sg, recalc_CV!, recalc_Sg!
     export Metadynamics, OPES, update!, update_bias!
     export calc_weights, MeasurementSet, measurements
+    export poly_loop_avg, topological_charge, wilson_loop
     export make_parameters, parameterloading, ParamSet, ParameterSet, print_parameters
     export run_sim, run_build
 
