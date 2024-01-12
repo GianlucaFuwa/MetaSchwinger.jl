@@ -1,19 +1,19 @@
 using Random
 
 N = 32
-var = "MetaD"
+var = "PTMetaD"
 
 physical["N"] = (N,N)
 physical["β"] = N^2 / 80
 physical["Ntherm"] = 10_000
-physical["Nsweeps"] = 10_000
+physical["Nsweeps"] = 100_000_000
 physical["initial"] = "cold"
 
 meta["meta_enabled"] = true
-meta["tempering_enabled"] = false
-meta["numinstances"] = 1
+meta["tempering_enabled"] = true
+meta["numinstances"] = 2
 meta["swap_every"] = 1
-meta["is_static"] = [true]
+meta["is_static"] = [true, true]
 meta["well_tempered"] = false
 meta["symmetric"] = true
 meta["CVlims"] = (-7, 7)
@@ -35,7 +35,7 @@ meas["meas_calls"] = Dict[
 str = "Proceedings_edit/N$(N)x$(N)_beta$(N^2/80)"
 
 system["veryverbose"] = false
-system["randomseeds"] = [Xoshiro()]
+system["randomseeds"] = [Xoshiro(), Xoshiro()]
 
 system["logdir"] = "./logs/$(str)"
 system["logfile"] = var
