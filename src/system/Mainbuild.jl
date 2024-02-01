@@ -67,7 +67,7 @@ module Mainbuild
         end
 
         for _ in 1:params.Ntherm
-            update!(updatemethod, field, rng)
+            update!(updatemethod, field, rng; adjust=true)
         end
 
         if typeof(bias) == Metadynamics
@@ -139,7 +139,7 @@ module Mainbuild
 
         for _ in 1:params.Ntherm
             for i in 1:numinstances
-                update!(updatemethod[i], fields[i], rng[i])
+                update!(updatemethod[i], fields[i], rng[i], adjust=true)
             end
         end
 

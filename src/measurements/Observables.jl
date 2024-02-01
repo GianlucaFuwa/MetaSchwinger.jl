@@ -1,7 +1,7 @@
 module Observables
     using Arpack
 
-    import ..Gaugefields: Gaugefield, plaquette, wilson_loop
+    import ..Gaugefields: Gaugefield, plaquette
 
     function topological_charge(u::Gaugefield)
         NX, NT = size(u)
