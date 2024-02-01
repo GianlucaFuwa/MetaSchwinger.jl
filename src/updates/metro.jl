@@ -10,10 +10,9 @@ mutable struct MetroUpdate <: AbstractUpdate
     end
 end
 
-function update!(updatemethod::MetroUpdate, U, rng; bias=nothing, kwargs...)
+function update!(updatemethod::MetroUpdate, U, rng; bias=nothing, adjust=false, kwargs...)
     ϵ = updatemethod.ϵ
     multi_hit = updatemethod.multi_hit
-    target_acc = updatemethod.target_acc
     norm = updatemethod.norm
 
     if bias === nothing
@@ -22,26 +21,25 @@ function update!(updatemethod::MetroUpdate, U, rng; bias=nothing, kwargs...)
         numaccepts = sweep_meta!(U, bias, rng, ϵ, multi_hit)
     end
 
-    updatemethod.ϵ = adjusted_ϵ(ϵ, numaccepts, norm, target_acc)
+    adjust && adjust_ϵ!(updatemethod, numaccepts)
     return numaccepts*norm
 end
 
-function sweep!(field::Gaugefield, rng, ϵ, multi_hit)
-	NX, NT = size(field)
+function adjust_ϵ!(metro::MetroUpdate, numaccepts)
+	metro.ϵ = mod(metro.ϵ + (numaccepts*metro.norm - metro.target_acc) * 0.2, 2π)
+	return nothing
+end
+
+function sweep!(U::Gaugefield, rng, ϵ, multi_hit)
+	NX, NT = size(U)
 	numaccepts = 0
 
-	for eo in 0:1
-		for ix in (eo+1):2:NX
+	for μ in 1:2
+		for eo in 0:1
 			for it in 1:NT
-				numaccepts += metropolis!(field, ix, it, 2, rng, ϵ, multi_hit)
-			end
-		end
-	end
-
-	for eo in 0:1
-		for it in (eo+1):2:NT
-			for ix in 1:NX
-				numaccepts += metropolis!(field, ix, it, 1, rng, ϵ, multi_hit)
+				for ix in 1+iseven(eo + it):2:NX
+					numaccepts += metropolis!(U, ix, it, μ, rng, ϵ, multi_hit)
+				end
 			end
 		end
 	end
@@ -49,22 +47,16 @@ function sweep!(field::Gaugefield, rng, ϵ, multi_hit)
 	return numaccepts
 end
 
-function sweep_meta!(field::Gaugefield, bias, rng, ϵ, multi_hit)
-	NX, NT = size(field)
+function sweep_meta!(U::Gaugefield, bias, rng, ϵ, multi_hit)
+	NX, NT = size(U)
 	numaccepts = 0
 
-	for eo in 0:1
-		for ix in (eo+1):2:NX
+	for μ in 1:2
+		for eo in 0:1
 			for it in 1:NT
-				numaccepts += metropolis_meta!(field, bias, ix, it, 2, rng, ϵ, multi_hit)
-			end
-		end
-	end
-
-	for eo in 0:1
-		for it in (eo+1):2:NT
-			for ix in 1:NX
-				numaccepts += metropolis_meta!(field, bias, ix, it, 1, rng, ϵ, multi_hit)
+				for ix in 1+iseven(eo + it):2:NX
+					numaccepts += metropolis_meta!(U, bias, ix, it, μ, rng, ϵ, multi_hit)
+				end
 			end
 		end
 	end
@@ -72,18 +64,18 @@ function sweep_meta!(field::Gaugefield, bias, rng, ϵ, multi_hit)
 	return numaccepts
 end
 
-function metropolis!(field::Gaugefield, ix, it, μ, rng, ϵ, multi_hit)
+function metropolis!(U::Gaugefield, ix, it, μ, rng, ϵ, multi_hit)
 	accept = 0
 
 	for _ in 1:multi_hit
 		dU = randn(rng) * ϵ
-		ΔSg = local_action_diff(field, ix, it, μ, dU)
-		ΔCV = local_metacharge_diff(field, ix, it, μ, dU)
+		ΔSg = local_action_diff(U, ix, it, μ, dU)
+		ΔCV = local_metacharge_diff(U, ix, it, μ, dU)
 
 		if rand(rng) ≤ exp(-ΔSg)
-			field[μ,ix,it] += dU
-			field.Sg += ΔSg
-			field.CV += ΔCV
+			U[μ,ix,it] += dU
+			U.Sg += ΔSg
+			U.CV += ΔCV
 			accept += 1
 		end
 	end
@@ -91,32 +83,28 @@ function metropolis!(field::Gaugefield, ix, it, μ, rng, ϵ, multi_hit)
 	return accept
 end
 
-function metropolis_meta!(field::Gaugefield, bias, ix, it, μ, rng, ϵ, multi_hit)
+function metropolis_meta!(U::Gaugefield, bias, ix, it, μ, rng, ϵ, multi_hit)
 	accept = 0
 
 	for _ in 1:multi_hit
 		dU = randn(rng) * ϵ
-		ΔSg = local_action_diff(field, ix, it, μ, dU)
-		ΔCV = local_metacharge_diff(field, ix, it, μ, dU)
+		ΔSg = local_action_diff(U, ix, it, μ, dU)
+		ΔCV = local_metacharge_diff(U, ix, it, μ, dU)
 
-		oldCV = field.CV
-		newCV = field.CV + ΔCV
+		oldCV = U.CV
+		newCV = U.CV + ΔCV
 
 		ΔV = bias(newCV) - bias(oldCV)
 
 		if rand(rng) ≤ exp(-ΔSg - ΔV)
-			field[μ,ix,it] += dU
-			field.Sg += ΔSg
-			field.CV += ΔCV
+			U[μ,ix,it] += dU
+			U.Sg += ΔSg
+			U.CV += ΔCV
 			accept += 1
 		end
 	end
 
 	return accept
-end
-
-function adjusted_ϵ(ϵ, numaccepts, metro_norm, metro_target_acc)
-	return 	mod(ϵ + (numaccepts*metro_norm - metro_target_acc) * 0.2, 2π)
 end
 
 function local_action_diff(g::Gaugefield, ix, it, μ, dU)

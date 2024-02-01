@@ -161,39 +161,6 @@ module Gaugefields
 		return plaq
 	end
 
-	function wilson_loop(u::Gaugefield, LX, LT, ix, it; tempgauge=false)
-		NX, NT = size(u)
-		x_up_side = 0.0
-		t_up_side = 0.0
-		x_down_side = 0.0
-		t_down_side = 0.0
-
-		if tempgauge == true
-
-			for i in 0:LX-1
-				x_up_side += u[1,mod1(ix+i, NX),it]
-				x_down_side -= u[1,mod1(ix+i, NX),mod1(it+LT, NT)]
-			end
-
-			return cis(x_up_side + x_down_side)
-		elseif tempgauge == false
-
-			for i in 0:LX-1
-				x_up_side += u[1,mod1(ix+i, NX),it]
-				x_down_side -= u[1,mod1(ix+i, NX),mod1(it+LT, NT)]
-			end
-
-			for i in 0:LT-1
-				t_up_side += u[2,mod1(ix+LX, NX),mod1(it+i, NT)]
-				t_down_side -= u[2,ix,mod1(it+i, NT)]
-			end
-
-			return cis(x_up_side + t_up_side + x_down_side + t_down_side)
-		else
-			error("tempgauge in Wilson loop calculation can only either be true or false")
-		end
-	end
-
 	function staple(u::Gaugefield, μ, ix, it)
 		NX, NT = size(u)
 		it_min = mod1(it-1, NT)

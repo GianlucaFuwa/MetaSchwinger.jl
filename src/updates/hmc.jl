@@ -20,7 +20,8 @@ end
 
 include("hmc_integrators.jl")
 
-function update!(updatemethod::HMCUpdate{TI}, U, rng; bias=nothing, metro_test=true) where {TI}
+function update!(updatemethod::HMCUpdate{TI}, U, rng;
+    bias=nothing, metro_test=true, kwargs...) where {TI}
     U_old = updatemethod._temp_U
     substitute_U!(U_old, U)
     gaussian_momenta!(updatemethod.P, updatemethod.ϕ, rng)
